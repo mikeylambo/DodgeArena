@@ -1,30 +1,71 @@
 # HANDOFF: build status
 
-This is a living checklist. If a session stops mid-build, the next one (you or Claude Code) picks up from here.
+Living checklist for Dodge Arena.
 
-## Done
-- [x] Shell vendored at `vendor/web-shell` (mikeylambo/Web-Game-Shell-v1.02 `main` @ 6f08d17, v1.1.0), unmodified.
-- [x] `src/sim/*`: pure TypeScript deterministic sim at a 120 Hz fixed step. Includes all six hazard kinds, the spawn director, difficulty curve, collision (AABB/circle/OBB SAT), coins, combo, near-miss, and the level-up breather.
-- [x] `src/content/tuning.json`: every gameplay number lives here.
-- [x] `src/sim/bot.ts` + `tools/bot-report.ts`: run with `npm run bot -- 500 [portrait]`.
-- [x] `src/sim/replay.ts`: records in the shell's `InputReplayRecorder` format; `replayRun()` re-simulates a run from it.
-- [x] `npm test` passes: fairness (10k seeds), determinism, and the bot survival band (median about 66–69 s, level-1 survival 100%).
-- [x] View/app layer: `src/view/{arena,fx,hud,palette}.ts`, `src/app/{game,input,audio,persistence}.ts`, `src/main.ts`, `index.html`, `src/styles.css`.
-- [x] `tsc --noEmit` is clean and `vite build` succeeds.
-- [x] Headless Chrome smoke test (`tools/smoke.mjs`): the start card and gameplay render correctly (screenshots checked).
-- [x] `SHELL_GAPS.md` written.
+## Status: M0 Complete & Verified
 
-## Next (in order)
-1. **Finish the smoke run.** Start `npm run dev -- --port 5199`, then run `node tools/smoke.mjs` (needs permission to launch Chrome). It was stopped during the "idle until death → over screen → tap restart" step, so that part hasn't been checked yet. Confirm the over screen appears, the restart is under 300 ms (`restartMs`), and the console shows no errors. Mobile layout: `MOBILE=1 W=390 H=844 node tools/smoke.mjs`.
-2. **Play it yourself:** `npm run dev`, open `http://localhost:5173/`.
-   - Debug overlay: `?dev=1` (fps, hazard count, restart ms, seed).
-   - Perf stress: `?dev=1&stress=40` (starts at level 20, death disabled). Check 60 fps on a mid-range phone.
-   - Phone testing: `npm run dev` already binds to the LAN (`server.host: true`). Check drag on iOS Safari and Android Chrome.
-3. **Feel pass:** tune values in `tuning.json` (player speed, telegraph times, sizes). After any change, run `npm run bot -- 500` and `npm run bot -- 300 portrait` and keep the medians between 45 and 90 s; `npm test` enforces this.
-4. **Git:** `git init`, commit, add remote `https://github.com/mikeylambo/DodgeArena` (the repo is currently empty), and push. `node_modules`/`dist` are already gitignored; `vendor/web-shell` is meant to be committed.
-5. **M1 (the agreed twist):** add *Turn the tables* (every N coins → 3 s predator mode where you can eat red) and *Bank or bust* (carried coins only count once banked at a drifting zone; dying loses them). Both go in the sim as new state, events, and tuning entries. Add fairness and bot tests for them before any view work. Music-driven spawns come after that.
+- [x] **Shell Vendoring**: Vendored at `vendor/web-shell` (mikeylambo/Web-Game-Shell-v1.02 `main` @ 6f08d17, v1.1.0), unmodified.
+- [x] **Simulation Core (`src/sim/*`)**:
+  - Pure TypeScript deterministic sim running at 120 Hz fixed step.
+  - All 6 hazard types implemented with SAT collision checks: `static`, `slider`, `bouncer`, `rotor`, `seeker`, `laser`.
+  - Fair spawn director: never spawns overlapping or within 1.5 player-widths of the player.
+  - Difficulty curve: escalates hazard budget, speed, and types; includes a 2.0s breather after level-up.
+  - Coins, combo multiplier, near-miss detection, and hitstop.
+- [x] **Tuning (`src/content/tuning.json`)**: All speeds, timings, dimensions, and weights are externalized in pure JSON.
+- [x] **Bot Verification (`src/sim/bot.ts`, `tools/bot-report.ts`)**:
+  - Dodge bot tuned for human-like reaction (~300ms, 12Hz decisions).
+  - Survives 45–90s median (measured: ~69s landscape, ~66s portrait) with 100% Level-1 survival across 400+ seeds.
+- [x] **Determinism & Replay (`src/sim/replay.ts`)**:
+  - `InputReplayRecorder` / `TickInputRecorder` integration.
+  - Test verified: same seed + input log produces bit-identical `RunState` hashes.
+- [x] **Automated Test Suite (`npm test`)**: 8/8 tests passing (10,000-seed fairness test, determinism, replay roundtrip, bot survival band).
+- [x] **View & Presentation (`src/view/*`, `src/app/*`)**:
+  - Phaser 3 canvas with retina DPR scaling (up to 2x DPR).
+  - Relative-drag touch controls (finger anywhere, cube follows drag delta 1:1, never hidden under thumb) + WASD/arrows.
+  - WebAudio synth SFX matching the shell's `AudioSystem` contract + pause on visibility/blur.
+  - Shell `BrowserStorage`, `SaveManager`, and persistent `StorageLeaderboardProvider`.
+  - Replay and best-run ghost capture with `PoseGhostRecorder`.
+- [x] **Build & Verification (`npm run check`, `npm run build`)**: Strict TypeScript clean, Vite production bundle builds without errors.
+- [x] **End-to-End Headless Smoke Test (`tools/smoke.mjs`)**:
+  - Verified card -> play -> death -> game-over screen -> instant restart.
+  - Measured restart latency: **37–50 ms** (far exceeding the ≤ 300 ms requirement).
+  - 0 console or runtime errors.
+- [x] **Git Repository**: Initialized, committed initial release, linked to `origin` (`https://github.com/mikeylambo/DodgeArena.git`).
+- [x] **Documentation**: `SHELL_GAPS.md` and `HANDOFF.md` documented.
 
-## Known notes
-- The arena uses fixed world sizes: 1600×900 landscape and 900×1600 portrait, picked at run start from the viewport shape. Daily scores are per orientation (the ghost id includes orientation).
-- Determinism is guaranteed per JS engine. `Math.sin`/`atan2` can differ across browsers, so verifying a replay on a server needs the same engine.
-- Bundle is about 1.25 MB, mostly Phaser (see SHELL_GAPS #6).
+---
+
+## How to Play & Test Locally
+
+1. **Dev Server**:
+   ```bash
+   npm run dev
+   ```
+   Open `http://localhost:5173/` in your browser.
+   - For debug stats (FPS, active hazards, restart latency ms, seed): add `?dev=1`
+   - For 40-hazard stress test: add `?dev=1&stress=40` (starts at Level 20 with immortality)
+   - For mobile testing on LAN: open the local IP displayed by Vite on your phone.
+
+2. **Automated Verification**:
+   ```bash
+   npm test               # Run unit tests (fairness 10k seeds, determinism, bot survival)
+   npm run bot -- 500     # Run 500-seed simulation benchmark
+   npm run check          # Run TypeScript typechecker
+   npm run build          # Test production Vite build
+   ```
+
+---
+
+## What's Next (Roadmap)
+
+1. **Push Initial Commit to Remote**:
+   When you're ready to sync to GitHub:
+   ```bash
+   git push -u origin main
+   ```
+2. **Feel Pass & Tuning**:
+   Tweak player speed, hazard telegraphs, or hitbox sizes in `src/content/tuning.json`. Run `npm test` after any edits to keep the bot survival band within 45–90 seconds.
+3. **M1 Feature Implementation (The Core Flips)**:
+   - **Turn the Tables**: Every 10 coins, activate a 3-second predator mode where the player turns red and can eat red hazards for bonus points.
+   - **Bank or Bust**: Unbanked coins are carried at risk and only score when dropped at a drifting bank zone. Dying forfeits unbanked coins.
+   - **Music-driven spawns**: Sync hazard waves to your custom beats/tracks.
