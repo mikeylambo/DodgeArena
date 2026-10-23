@@ -1,0 +1,225 @@
+import Phaser from "phaser";
+import { PALETTE } from "./palette.js";
+import { isLethal } from "../sim/collide.js";
+import { TUNING } from "../sim/tuning.js";
+import type { Hazard, RunState } from "../sim/types.js";
+
+const TAU = Math.PI * 2;
+const easeOut = (t: number) => 1 - (1 - t) * (1 - t);
+
+/**
+ * Draws the arena from sim state. Read-only view of RunState; all drawing happens in
+ * world units inside `root`, which is scaled/positioned to fit the viewport.
+ */
+export class ArenaView {
+  readonly root: Phaser.GameObjects.Container;
+  private readonly gridG: Phaser.GameObjects.Graphics;
+  private readonly coinG: Phaser.GameObjects.Graphics;
+  private readonly hazG: Phaser.GameObjects.Graphics;
+  private readonly ghostG: Phaser.GameObjects.Graphics;
+  private readonly playerG: Phaser.GameObjects.Graphics;
+  readonly fxG: Phaser.GameObjects.Graphics;
+  scale = 1;
+  ox = 0;
+  oy = 0;
+  private gridKey = "";
+  private clock = 0;
+
+  constructor(scene: Phaser.Scene) {
+    this.gridG = scene.add.graphics();
+    this.coinG = scene.add.graphics();
+    this.hazG = scene.add.graphics();
+    this.ghostG = scene.add.graphics();
+    this.playerG = scene.add.graphics();
+    this.fxG = scene.add.graphics();
+    this.root = scene.add.container(0, 0, [this.gridG, this.coinG, this.ghostG, this.hazG, this.playerG, this.fxG]);
+  }
+
+  /** Fit an arena of w×h world units into the viewport (device px), below `topInset`. */
+  layout(viewW: number, viewH: number, w: number, h: number, topInset: number, pad: number): void {
+    const availW = viewW - pad * 2, availH = viewH - topInset - pad * 2;
+    this.scale = Math.max(0.05, Math.min(availW / w, availH / h));
+    this.ox = Math.round((viewW - w * this.scale) / 2);
+    this.oy = Math.round(topInset + pad + (availH - h * this.scale) / 2);
+    this.root.setScale(this.scale);
+    this.root.setPosition(this.ox, this.oy);
+    const key = `${w}x${h}`;
+    if (key !== this.gridKey) { this.gridKey = key; this.drawGrid(w, h); }
+  }
+
+  setShake(dx: number, dy: number): void { this.root.setPosition(this.ox + dx, this.oy + dy); }
+
+  private drawGrid(w: number, h: number): void {
+    const g = this.gridG;
+    const cell = TUNING.arena.cell;
+    g.clear();
+    g.fillStyle(PALETTE.bg, 1).fillRect(0, 0, w, h);
+    g.lineStyle(1.5, PALETTE.grid, 1);
+    for (let x = cell; x < w; x += cell) g.lineBetween(x, 0, x, h);
+    for (let y = cell; y < h; y += cell) g.lineBetween(0, y, w, y);
+    g.lineStyle(3, PALETTE.border, 1).strokeRect(0, 0, w, h);
+  }
+
+  draw(s: RunState, dtMs: number, opts: { ghost: { x: number; y: number } | null; playerPop: number; showPlayer: boolean }): void {
+    this.clock += dtMs / 1000;
+    this.drawCoins(s);
+    this.drawHazards(s);
+    this.drawGhost(opts.ghost, s.player.size);
+    this.drawPlayer(s, opts.playerPop, opts.showPlayer);
+  }
+
+  private drawCoins(s: RunState): void {
+    const g = this.coinG;
+    g.clear();
+    for (const c of s.coins) {
+      const r = c.r * (1 + 0.1 * Math.sin(this.clock * 6 + c.id));
+      g.fillStyle(PALETTE.coin, 0.12).fillCircle(c.x, c.y, r + 9);
+      g.fillStyle(PALETTE.coin, 0.25).fillCircle(c.x, c.y, r + 4);
+      g.fillStyle(PALETTE.coin, 1).fillCircle(c.x, c.y, r);
+      g.fillStyle(PALETTE.coinCore, 1).fillCircle(c.x - r * 0.25, c.y - r * 0.25, r * 0.4);
+    }
+  }
+
+  private drawGhost(pose: { x: number; y: number } | null, size: number): void {
+    const g = this.ghostG;
+    g.clear();
+    if (!pose) return;
+    g.lineStyle(2, PALETTE.ghost, 0.35).strokeRoundedRect(pose.x - size / 2, pose.y - size / 2, size, size, size * 0.22);
+  }
+
+  private drawPlayer(s: RunState, pop: number, show: boolean): void {
+    const g = this.playerG;
+    g.clear();
+    if (!show) return;
+    const p = s.player;
+    const sz = p.size * pop;
+    const x = p.x - sz / 2, y = p.y - sz / 2, rad = sz * 0.22;
+    g.fillStyle(PALETTE.player, 0.1).fillRoundedRect(x - 10, y - 10, sz + 20, sz + 20, rad + 10);
+    g.fillStyle(PALETTE.player, 0.22).fillRoundedRect(x - 5, y - 5, sz + 10, sz + 10, rad + 5);
+    g.fillStyle(PALETTE.player, 1).fillRoundedRect(x, y, sz, sz, rad);
+    g.lineStyle(2, PALETTE.playerCore, 0.9).strokeRoundedRect(x + 2, y + 2, sz - 4, sz - 4, Math.max(1, rad - 2));
+  }
+
+  private drawHazards(s: RunState): void {
+    const g = this.hazG;
+    g.clear();
+    for (const hz of s.hazards) this.drawHazard(g, hz, s);
+  }
+
+  private drawHazard(g: Phaser.GameObjects.Graphics, hz: Hazard, s: RunState): void {
+    const lethal = isLethal(hz);
+    const telegraphing = hz.age < hz.telegraph;
+    let alpha = 1;
+    if (!telegraphing && hz.age > hz.life - hz.fadeSafe) alpha = Math.max(0, (hz.life - hz.age) / hz.fadeSafe) * 0.6;
+
+    if (hz.kind === "laser") { this.drawLaser(g, hz, s, telegraphing); return; }
+
+    // Telegraph: grows in, blinks faster as it approaches lethal.
+    let grow = 1, fillA = alpha, strokeA = 0;
+    if (telegraphing) {
+      const k = hz.age / hz.telegraph;
+      grow = 0.55 + 0.45 * easeOut(Math.min(1, hz.age / 0.22));
+      const pulse = 0.5 + 0.5 * Math.sin(hz.age * TAU * (2.5 + 5 * k));
+      fillA = 0.14 + 0.22 * pulse * k;
+      strokeA = 0.55 + 0.45 * pulse;
+    }
+
+    if (hz.kind === "rotor" && telegraphing) {
+      const sh = hz.shape as { hw: number };
+      g.lineStyle(2, PALETTE.red, 0.18).strokeCircle(hz.x, hz.y, sh.hw);
+    }
+
+    if (hz.shape.type === "circle") {
+      const r = hz.shape.r * grow;
+      if (lethal || !telegraphing) {
+        g.fillStyle(PALETTE.red, 0.12 * alpha).fillCircle(hz.x, hz.y, r + 9);
+        g.fillStyle(PALETTE.red, 0.25 * alpha).fillCircle(hz.x, hz.y, r + 4);
+      }
+      g.fillStyle(PALETTE.red, fillA).fillCircle(hz.x, hz.y, r);
+      if (strokeA > 0) g.lineStyle(2.5, PALETTE.red, strokeA).strokeCircle(hz.x, hz.y, r);
+      if (hz.kind === "seeker") {
+        // A dark "eye" that looks at its heading: reads as alive/homing without colour.
+        const ex = hz.x + Math.cos(hz.angle) * r * 0.42, ey = hz.y + Math.sin(hz.angle) * r * 0.42;
+        g.fillStyle(PALETTE.bg, telegraphing ? 0.5 : 0.85 * alpha).fillCircle(ex, ey, r * 0.34);
+        g.lineStyle(2, PALETTE.redHot, 0.6 * (telegraphing ? strokeA : alpha)).strokeCircle(hz.x, hz.y, r + 5);
+      } else if (hz.kind === "bouncer") {
+        g.fillStyle(PALETTE.redHot, 0.6 * (telegraphing ? fillA : alpha)).fillCircle(hz.x - r * 0.3, hz.y - r * 0.3, r * 0.28);
+      }
+      return;
+    }
+
+    // Boxes (axis-aligned) and OBBs share a polygon path.
+    const sh = hz.shape;
+    const hw = sh.hw * grow, hh = sh.hh * grow;
+    const ang = sh.type === "obb" ? hz.angle : 0;
+    if (lethal || !telegraphing) {
+      g.fillStyle(PALETTE.red, 0.12 * alpha); this.fillRot(g, hz.x, hz.y, hw + 8, hh + 8, ang);
+      g.fillStyle(PALETTE.red, 0.25 * alpha); this.fillRot(g, hz.x, hz.y, hw + 4, hh + 4, ang);
+    }
+    g.fillStyle(PALETTE.red, fillA); this.fillRot(g, hz.x, hz.y, hw, hh, ang);
+    if (strokeA > 0) { g.lineStyle(2.5, PALETTE.red, strokeA); this.strokeRot(g, hz.x, hz.y, hw, hh, ang); }
+    if (hz.kind === "rotor") g.fillStyle(PALETTE.redHot, alpha).fillCircle(hz.x, hz.y, hh * 0.7);
+
+    if (hz.kind === "slider" && telegraphing) {
+      // Chevrons point where it will travel.
+      const len = Math.hypot(hz.vx, hz.vy) || 1;
+      const ux = hz.vx / len, uy = hz.vy / len;
+      const vx = -uy, vy = ux;
+      g.lineStyle(3, PALETTE.red, strokeA);
+      for (let i = 1; i <= 2; i++) {
+        const d = Math.abs(ux) * hw + Math.abs(uy) * hh + 6 + i * 14;
+        const cx = hz.x + ux * d, cy = hz.y + uy * d;
+        g.beginPath();
+        g.moveTo(cx - ux * 8 + vx * 9, cy - uy * 8 + vy * 9);
+        g.lineTo(cx, cy);
+        g.lineTo(cx - ux * 8 - vx * 9, cy - uy * 8 - vy * 9);
+        g.strokePath();
+      }
+    }
+  }
+
+  private drawLaser(g: Phaser.GameObjects.Graphics, hz: Hazard, s: RunState, telegraphing: boolean): void {
+    const sh = hz.shape as { hw: number; hh: number };
+    const horiz = sh.hw > sh.hh;
+    if (telegraphing) {
+      const k = hz.age / hz.telegraph;
+      const pulse = 0.5 + 0.5 * Math.sin(hz.age * TAU * (3 + 8 * k));
+      const a = 0.25 + 0.55 * pulse;
+      // Thin aim line + faint beam envelope + edge emitters.
+      g.fillStyle(PALETTE.red, 0.06 + 0.1 * k);
+      g.fillRect(hz.x - sh.hw, hz.y - sh.hh, sh.hw * 2, sh.hh * 2);
+      g.lineStyle(2, PALETTE.red, a);
+      if (horiz) g.lineBetween(0, hz.y, s.arena.w, hz.y); else g.lineBetween(hz.x, 0, hz.x, s.arena.h);
+      g.fillStyle(PALETTE.red, a);
+      const m = 14;
+      if (horiz) {
+        g.fillTriangle(0, hz.y - m, 0, hz.y + m, m, hz.y);
+        g.fillTriangle(s.arena.w, hz.y - m, s.arena.w, hz.y + m, s.arena.w - m, hz.y);
+      } else {
+        g.fillTriangle(hz.x - m, 0, hz.x + m, 0, hz.x, m);
+        g.fillTriangle(hz.x - m, s.arena.h, hz.x + m, s.arena.h, hz.x, s.arena.h - m);
+      }
+      return;
+    }
+    const t = (hz.age - hz.telegraph) / Math.max(0.001, hz.life - hz.telegraph);
+    const a = 1 - t * 0.5;
+    g.fillStyle(PALETTE.red, 0.2 * a).fillRect(hz.x - sh.hw - 6, hz.y - sh.hh - 6, sh.hw * 2 + 12, sh.hh * 2 + 12);
+    g.fillStyle(PALETTE.red, a).fillRect(hz.x - sh.hw, hz.y - sh.hh, sh.hw * 2, sh.hh * 2);
+    g.fillStyle(PALETTE.white, 0.85 * a);
+    if (horiz) g.fillRect(hz.x - sh.hw, hz.y - sh.hh * 0.25, sh.hw * 2, sh.hh * 0.5);
+    else g.fillRect(hz.x - sh.hw * 0.25, hz.y - sh.hh, sh.hw * 0.5, sh.hh * 2);
+  }
+
+  private corners(x: number, y: number, hw: number, hh: number, a: number): Phaser.Types.Math.Vector2Like[] {
+    const c = Math.cos(a), s = Math.sin(a);
+    return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([u, v]) => ({ x: x + u! * c - v! * s, y: y + u! * s + v! * c }));
+  }
+  private fillRot(g: Phaser.GameObjects.Graphics, x: number, y: number, hw: number, hh: number, a: number): void {
+    if (a === 0) g.fillRect(x - hw, y - hh, hw * 2, hh * 2);
+    else g.fillPoints(this.corners(x, y, hw, hh, a), true);
+  }
+  private strokeRot(g: Phaser.GameObjects.Graphics, x: number, y: number, hw: number, hh: number, a: number): void {
+    if (a === 0) g.strokeRect(x - hw, y - hh, hw * 2, hh * 2);
+    else g.strokePoints(this.corners(x, y, hw, hh, a), true);
+  }
+}

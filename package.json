@@ -1,0 +1,25 @@
+{
+  "name": "dodge-arena-proto",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.mjs",
+    "bot": "tsx tools/bot-report.ts",
+    "verify": "npm run check && npm test && vite build"
+  },
+  "dependencies": {
+    "@slu/web-shell": "file:vendor/web-shell",
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.0"
+  }
+}

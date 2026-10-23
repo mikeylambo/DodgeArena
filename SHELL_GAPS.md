@@ -1,0 +1,12 @@
+# SHELL_GAPS.md
+
+Things the game needed that `@slu/web-shell` (v1.1.0, `main` @ 6f08d17) doesn't provide. The shell was **not modified**; each gap has a game-side workaround.
+
+| # | Gap | Workaround in this repo | Suggested shell change |
+|---|-----|-------------------------|------------------------|
+| 1 | `createGameApp` always mounts the full Title → Menu → Mode Select → Setup flow. There's no **instant-play / casual** flow (one PLAY card on first load, then tap anywhere to retry). | We don't call `createGameApp`. `src/main.ts` + `src/app/game.ts` compose shell primitives directly (`BrowserStorage`, `SaveManager`, `PhaserAdapter`, `AudioLifecycleCoordinator`, `TelemetryRecorder`, replay/ghost modules). | Add `flow: "instant"` (or a `CasualFlowController`) to `createGameApp`: skip menus, expose `onRetry`, keep pause/settings reachable from a HUD button. |
+| 2 | `LocalLeaderboardProvider` is **in-memory only**, so scores vanish on reload. | `StorageLeaderboardProvider` in `src/app/persistence.ts` implements `LeaderboardProvider` on top of any `StorageAdapter`. Same interface, so a Vercel provider can replace it. | Ship a `StorageLeaderboardProvider(storage)` next to the local one. |
+| 3 | `PhaserAdapter` is hooks-only and has no DPR policy. In `Scale.RESIZE` mode Phaser renders at CSS resolution, so it looks blurry on retina phones. | `src/main.ts` uses `Scale.NONE`, sizes the canvas to `innerWidth × dpr` (dpr capped at 2), and sets `zoom = 1/dpr`, all inside the adapter's `resize` hook. | A `createPhaserGame({ maxDpr })` helper in `adapters/phaser`. |
+| 4 | `InputReplayRecorder`/`Player` are time-based (`atMs`). With a fixed-step sim, accumulating float deltas in `advance()` can push a frame onto the wrong tick. | `src/sim/replay.ts` records with a tick-derived clock and replays by mapping `atMs` back to integer ticks (`Math.round`). | Add an optional `tickHz` to `InputReplayData` plus a `TickReplayPlayer`. |
+| 5 | `BrowserInputSource` covers keys and gamepad, but it has no **relative-drag pointer** action (the cube moves by the finger's delta and isn't hidden under the finger). | `src/app/input.ts` handles pointer and keys and emits one semantic `StepInput`. | A `RelativeDragSource` in `input/` that emits `move_dx/move_dy` axes. |
+| 6 | Importing from the `@slu/web-shell` root pulls in the whole barrel. Bundle is about 1.25 MB, mostly Phaser, but the shell adds weight too. | Accepted for M0. | Mark the package `sideEffects: false` so tree-shaking can drop unused modules. |

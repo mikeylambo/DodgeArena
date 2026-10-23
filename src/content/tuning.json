@@ -1,0 +1,87 @@
+{
+  "$comment": "All gameplay numbers live here. Units: world units (arena is 1600x900 landscape / 900x1600 portrait), seconds, or per-second rates. Changing a rule should be a data change.",
+  "arena": {
+    "landscape": { "width": 1600, "height": 900 },
+    "portrait": { "width": 900, "height": 1600 },
+    "cell": 50
+  },
+  "sim": {
+    "hz": 120
+  },
+  "player": {
+    "size": 30,
+    "hitboxScale": 0.8,
+    "keySpeed": 560,
+    "dragGain": 1.0,
+    "dragMaxSpeed": 1500,
+    "dragMaxPending": 160
+  },
+  "coins": {
+    "radius": 9,
+    "onScreen": 4,
+    "value": 10,
+    "respawnDelay": 0.6,
+    "minDistFromPlayer": 180,
+    "hazardClearance": 40,
+    "edgeMargin": 40,
+    "comboWindow": 1.2
+  },
+  "fairness": {
+    "minTelegraph": 0.5,
+    "safeSpawnPlayerWidths": 1.5,
+    "breatherAfterLevelUp": 2.0,
+    "spawnAttempts": 24,
+    "fadeOutSafe": 0.25
+  },
+  "juice": {
+    "nearMissPlayerWidths": 0.3,
+    "nearMissCooldown": 0.6,
+    "hitstopMs": 120
+  },
+  "levels": {
+    "secondsPerLevel": 11,
+    "coinsPerLevel": 6,
+    "table": [
+      { "budget": 4,  "interval": 1.30, "speed": 1.00, "kinds": { "static": 1 } },
+      { "budget": 6,  "interval": 1.15, "speed": 1.00, "kinds": { "static": 1, "slider": 1.4 } },
+      { "budget": 8,  "interval": 1.05, "speed": 1.00, "kinds": { "static": 0.8, "slider": 1.2, "bouncer": 1.2 } },
+      { "budget": 9,  "interval": 1.00, "speed": 1.04, "kinds": { "static": 0.6, "slider": 1.0, "bouncer": 1.0, "rotor": 1.2 } },
+      { "budget": 10, "interval": 0.95, "speed": 1.08, "kinds": { "static": 0.5, "slider": 1.0, "bouncer": 1.0, "rotor": 0.9, "seeker": 1.0 } },
+      { "budget": 11, "interval": 0.90, "speed": 1.12, "kinds": { "static": 0.5, "slider": 1.0, "bouncer": 0.9, "rotor": 0.8, "seeker": 0.8, "laser": 1.0 } }
+    ],
+    "beyond": {
+      "budgetPerLevel": 2,
+      "budgetMax": 40,
+      "intervalScale": 0.84,
+      "intervalMin": 0.3,
+      "speedPerLevel": 0.07,
+      "speedMax": 1.8
+    }
+  },
+  "hazards": {
+    "static": {
+      "length": 72, "thickness": 24,
+      "telegraph": 0.7, "life": [3.0, 4.5]
+    },
+    "slider": {
+      "length": 72, "thickness": 24,
+      "telegraph": 0.7, "speed": [150, 230], "edgeInset": 30
+    },
+    "bouncer": {
+      "radius": 22,
+      "telegraph": 0.75, "speed": [130, 190], "life": [7, 10]
+    },
+    "rotor": {
+      "length": 190, "thickness": 20,
+      "telegraph": 0.9, "angularSpeed": [0.9, 1.6], "life": [5, 7]
+    },
+    "seeker": {
+      "radius": 18,
+      "telegraph": 0.8, "speed": 150, "turnRate": 2.2, "life": [5, 7], "minSpawnDist": 260
+    },
+    "laser": {
+      "thickness": 34,
+      "telegraph": 0.9, "beam": 0.3
+    }
+  }
+}
