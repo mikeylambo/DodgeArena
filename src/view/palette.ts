@@ -12,4 +12,7 @@ export const PALETTE = {
   red: 0xf0304a,
   redHot: 0xff6a7c,
   white: 0xffffff,
+  /** Frenzy inverts the palette: hazards wear the player's cyan, the player wears red. */
+  prey: 0x5ff5ff,
+  preyHot: 0xc8fdff,
 } as const;

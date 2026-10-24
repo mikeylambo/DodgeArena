@@ -41,6 +41,13 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 #btn-mute .x { display: none; }
 #btn-mute.muted .wave { display: none; }
 #btn-mute.muted .x { display: inline; }
+.meter { position: relative; width: 132px; height: 6px; margin-top: 8px; border-radius: 99px; background: #22252f; overflow: hidden; }
+.meter i { position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0); background: var(--cyan); border-radius: inherit; box-shadow: 0 0 10px rgba(95,245,255,.7); transition: transform .18s ease-out; }
+.meter.full i { animation: meterReady .5s ease-out; }
+.meter.frenzy i { background: var(--red); box-shadow: 0 0 14px rgba(240,48,74,.9); transition: none; }
+.meter.frenzy { box-shadow: 0 0 0 2px rgba(240,48,74,.35); }
+@keyframes meterReady { 0% { filter: brightness(2.5); } 100% { filter: none; } }
+.eaten { color: var(--red); }
 .punch { animation: punch .28s ease-out; }
 @keyframes punch { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
 

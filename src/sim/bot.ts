@@ -29,6 +29,7 @@ export class DodgeBot {
     if (s.tick % this.opts.decideEvery !== 0) return this.held;
     const p = s.player;
     const o = this.opts;
+    if (s.frenzy > 0) return (this.held = this.hunt(s));
     let fx = 0, fy = 0;
 
     for (const hz of s.hazards) {
@@ -70,5 +71,18 @@ export class DodgeBot {
     const fl = Math.sqrt(fx * fx + fy * fy);
     this.held = fl > 1e-6 ? { kx: fx / fl, ky: fy / fl, dx: 0, dy: 0 } : { kx: 0, ky: 0, dx: 0, dy: 0 };
     return this.held;
+  }
+
+  /** Frenzy: chase the nearest hazard that's at least `reaction` old. */
+  private hunt(s: RunState): StepInput {
+    const p = s.player;
+    let best = Infinity, tx = 0, ty = 0;
+    for (const hz of s.hazards) {
+      if (hz.age < this.opts.reaction) continue;
+      const dx = hz.x - p.x, dy = hz.y - p.y, d2 = dx * dx + dy * dy;
+      if (d2 < best) { best = d2; tx = dx; ty = dy; }
+    }
+    const d = Math.sqrt(best);
+    return Number.isFinite(d) && d > 1e-3 ? { kx: tx / d, ky: ty / d, dx: 0, dy: 0 } : { kx: 0, ky: 0, dx: 0, dy: 0 };
   }
 }

@@ -49,6 +49,22 @@ export class FxSystem {
     this.ring(x, y, 10, 140, 0.45, PALETTE.red, 5);
     this.shake(14, 0.35);
   }
+  eat(x: number, y: number, chain: number): void {
+    const k = Math.min(chain, 6);
+    this.burst(x, y, 16 + k * 4, PALETTE.prey, [140, 460 + k * 40], [0.25, 0.55], [3, 6]);
+    this.burst(x, y, 8, PALETTE.red, [60, 220], [0.2, 0.4], [2.5, 4.5]);
+    this.ring(x, y, 12, 60 + k * 10, 0.3, PALETTE.preyHot, 4);
+    this.shake(4 + k, 0.16);
+  }
+  frenzyStart(x: number, y: number, w: number, h: number): void {
+    this.flashScreen(0.35, PALETTE.red);
+    this.ring(x, y, 20, Math.max(w, h), 0.55, PALETTE.red, 8);
+    this.ring(x, y, 10, Math.max(w, h) * 0.6, 0.45, PALETTE.redHot, 4);
+    this.shake(8, 0.25);
+  }
+  frenzyEnd(x: number, y: number): void {
+    this.ring(x, y, 70, 18, 0.3, PALETTE.player, 3);
+  }
   levelUp(w: number, h: number): void {
     this.flashScreen(0.22);
     this.ring(w / 2, h / 2, 20, Math.max(w, h) * 0.7, 0.6, 0x5ff5ff, 4);

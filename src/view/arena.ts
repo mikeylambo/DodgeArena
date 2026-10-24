@@ -18,6 +18,8 @@ export class ArenaView {
   private readonly hazG: Phaser.GameObjects.Graphics;
   private readonly ghostG: Phaser.GameObjects.Graphics;
   private readonly playerG: Phaser.GameObjects.Graphics;
+  private readonly frameG: Phaser.GameObjects.Graphics;
+  private readonly popups: { t: Phaser.GameObjects.Text; life: number; x: number; y: number }[] = [];
   readonly fxG: Phaser.GameObjects.Graphics;
   scale = 1;
   ox = 0;
@@ -32,7 +34,15 @@ export class ArenaView {
     this.ghostG = scene.add.graphics();
     this.playerG = scene.add.graphics();
     this.fxG = scene.add.graphics();
-    this.root = scene.add.container(0, 0, [this.gridG, this.coinG, this.ghostG, this.hazG, this.playerG, this.fxG]);
+    this.frameG = scene.add.graphics();
+    const texts = [];
+    for (let i = 0; i < 8; i++) {
+      const t = scene.add.text(0, 0, "", { fontFamily: "ui-sans-serif, system-ui, sans-serif", fontSize: "34px", fontStyle: "900", color: "#ffffff", stroke: "#0d0e14", strokeThickness: 6 })
+        .setOrigin(0.5).setVisible(false).setResolution(2);
+      this.popups.push({ t, life: 0, x: 0, y: 0 });
+      texts.push(t);
+    }
+    this.root = scene.add.container(0, 0, [this.gridG, this.frameG, this.coinG, this.ghostG, this.hazG, this.playerG, this.fxG, ...texts]);
   }
 
   /** Fit an arena of w×h world units into the viewport (device px), below `topInset`. */
@@ -62,10 +72,50 @@ export class ArenaView {
 
   draw(s: RunState, dtMs: number, opts: { ghost: { x: number; y: number } | null; playerPop: number; showPlayer: boolean }): void {
     this.clock += dtMs / 1000;
+    this.drawFrame(s);
     this.drawCoins(s);
     this.drawHazards(s);
     this.drawGhost(opts.ghost, s.player.size);
     this.drawPlayer(s, opts.playerPop, opts.showPlayer);
+    this.updatePopups(dtMs / 1000);
+  }
+
+  /** Floating score text in world units. */
+  popup(x: number, y: number, text: string, color: string, scale = 1): void {
+    const p = this.popups.reduce((a, b) => (b.life < a.life ? b : a));
+    p.x = x; p.y = y; p.life = 0.8;
+    p.t.setText(text).setColor(color).setScale(scale).setPosition(x, y).setAlpha(1).setVisible(true);
+  }
+
+  clearPopups(): void { for (const p of this.popups) { p.life = 0; p.t.setVisible(false); } }
+
+  private updatePopups(dt: number): void {
+    for (const p of this.popups) {
+      if (p.life <= 0) continue;
+      p.life -= dt;
+      if (p.life <= 0) { p.t.setVisible(false); continue; }
+      const k = 1 - p.life / 0.8;
+      p.t.setPosition(p.x, p.y - 60 * easeOut(k)).setAlpha(k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4);
+    }
+  }
+
+  /** True while a frenzy's final seconds should flash prey back to red. */
+  private warnBlink(s: RunState): boolean {
+    return s.frenzy > 0 && s.frenzy < TUNING.frenzy.warn && Math.floor(s.frenzy * 10) % 2 === 0;
+  }
+
+  /** Arena border: pulses red during a frenzy. */
+  private drawFrame(s: RunState): void {
+    const g = this.frameG;
+    g.clear();
+    if (s.frenzy <= 0) return;
+    const fade = Math.min(1, s.frenzy / 0.25, (TUNING.frenzy.duration - s.frenzy) / 0.12);
+    const pulse = 0.5 + 0.5 * Math.sin(this.clock * TAU * 4);
+    g.fillStyle(PALETTE.red, 0.05 * fade).fillRect(0, 0, s.arena.w, s.arena.h);
+    for (let i = 0; i < 3; i++) {
+      g.lineStyle(10 - i * 3, PALETTE.red, (0.18 + 0.3 * pulse) * fade * (1 - i * 0.25));
+      g.strokeRect(i * 7, i * 7, s.arena.w - i * 14, s.arena.h - i * 14);
+    }
   }
 
   private drawCoins(s: RunState): void {
@@ -92,12 +142,20 @@ export class ArenaView {
     g.clear();
     if (!show) return;
     const p = s.player;
-    const sz = p.size * pop;
+    const hunting = s.frenzy > 0 && !this.warnBlink(s);
+    const body = hunting ? PALETTE.red : PALETTE.player, core = hunting ? PALETTE.redHot : PALETTE.playerCore;
+    // Grace: a quick flicker says "you're safe, but not for long".
+    const a = s.grace > 0 && Math.floor(s.grace * 16) % 2 === 0 ? 0.35 : 1;
+    const sz = p.size * pop * (s.frenzy > 0 ? 1.12 + 0.05 * Math.sin(this.clock * TAU * 6) : 1);
     const x = p.x - sz / 2, y = p.y - sz / 2, rad = sz * 0.22;
-    g.fillStyle(PALETTE.player, 0.1).fillRoundedRect(x - 10, y - 10, sz + 20, sz + 20, rad + 10);
-    g.fillStyle(PALETTE.player, 0.22).fillRoundedRect(x - 5, y - 5, sz + 10, sz + 10, rad + 5);
-    g.fillStyle(PALETTE.player, 1).fillRoundedRect(x, y, sz, sz, rad);
-    g.lineStyle(2, PALETTE.playerCore, 0.9).strokeRoundedRect(x + 2, y + 2, sz - 4, sz - 4, Math.max(1, rad - 2));
+    if (s.frenzy > 0) {
+      const k = (this.clock * 2.5) % 1;
+      g.lineStyle(3 * (1 - k), body, 0.7 * (1 - k)).strokeRoundedRect(x - 6 - 22 * k, y - 6 - 22 * k, sz + 12 + 44 * k, sz + 12 + 44 * k, rad + 8 + 10 * k);
+    }
+    g.fillStyle(body, 0.1 * a).fillRoundedRect(x - 10, y - 10, sz + 20, sz + 20, rad + 10);
+    g.fillStyle(body, 0.22 * a).fillRoundedRect(x - 5, y - 5, sz + 10, sz + 10, rad + 5);
+    g.fillStyle(body, a).fillRoundedRect(x, y, sz, sz, rad);
+    g.lineStyle(2, core, 0.9 * a).strokeRoundedRect(x + 2, y + 2, sz - 4, sz - 4, Math.max(1, rad - 2));
   }
 
   private drawHazards(s: RunState): void {
@@ -107,7 +165,14 @@ export class ArenaView {
   }
 
   private drawHazard(g: Phaser.GameObjects.Graphics, hz: Hazard, s: RunState): void {
-    const lethal = isLethal(hz);
+    const prey = s.frenzy > 0 && !this.warnBlink(s);
+    const RED = prey ? PALETTE.prey : PALETTE.red, HOT = prey ? PALETTE.preyHot : PALETTE.redHot;
+    if (s.frenzy > 0) {
+      // Prey trembles. Presentation-only offset; the sim position is untouched.
+      const j = 1.6;
+      hz = { ...hz, x: hz.x + Math.sin(this.clock * 61 + hz.id * 7) * j, y: hz.y + Math.cos(this.clock * 53 + hz.id * 3) * j };
+    }
+    const lethal = isLethal(hz) || s.frenzy > 0;
     const telegraphing = hz.age < hz.telegraph;
     let alpha = 1;
     if (!telegraphing && hz.age > hz.life - hz.fadeSafe) alpha = Math.max(0, (hz.life - hz.age) / hz.fadeSafe) * 0.6;
@@ -126,24 +191,24 @@ export class ArenaView {
 
     if (hz.kind === "rotor" && telegraphing) {
       const sh = hz.shape as { hw: number };
-      g.lineStyle(2, PALETTE.red, 0.18).strokeCircle(hz.x, hz.y, sh.hw);
+      g.lineStyle(2, RED, 0.18).strokeCircle(hz.x, hz.y, sh.hw);
     }
 
     if (hz.shape.type === "circle") {
       const r = hz.shape.r * grow;
       if (lethal || !telegraphing) {
-        g.fillStyle(PALETTE.red, 0.12 * alpha).fillCircle(hz.x, hz.y, r + 9);
-        g.fillStyle(PALETTE.red, 0.25 * alpha).fillCircle(hz.x, hz.y, r + 4);
+        g.fillStyle(RED, 0.12 * alpha).fillCircle(hz.x, hz.y, r + 9);
+        g.fillStyle(RED, 0.25 * alpha).fillCircle(hz.x, hz.y, r + 4);
       }
-      g.fillStyle(PALETTE.red, fillA).fillCircle(hz.x, hz.y, r);
-      if (strokeA > 0) g.lineStyle(2.5, PALETTE.red, strokeA).strokeCircle(hz.x, hz.y, r);
+      g.fillStyle(RED, fillA).fillCircle(hz.x, hz.y, r);
+      if (strokeA > 0) g.lineStyle(2.5, RED, strokeA).strokeCircle(hz.x, hz.y, r);
       if (hz.kind === "seeker") {
         // A dark "eye" that looks at its heading: reads as alive/homing without colour.
         const ex = hz.x + Math.cos(hz.angle) * r * 0.42, ey = hz.y + Math.sin(hz.angle) * r * 0.42;
         g.fillStyle(PALETTE.bg, telegraphing ? 0.5 : 0.85 * alpha).fillCircle(ex, ey, r * 0.34);
-        g.lineStyle(2, PALETTE.redHot, 0.6 * (telegraphing ? strokeA : alpha)).strokeCircle(hz.x, hz.y, r + 5);
+        g.lineStyle(2, HOT, 0.6 * (telegraphing ? strokeA : alpha)).strokeCircle(hz.x, hz.y, r + 5);
       } else if (hz.kind === "bouncer") {
-        g.fillStyle(PALETTE.redHot, 0.6 * (telegraphing ? fillA : alpha)).fillCircle(hz.x - r * 0.3, hz.y - r * 0.3, r * 0.28);
+        g.fillStyle(HOT, 0.6 * (telegraphing ? fillA : alpha)).fillCircle(hz.x - r * 0.3, hz.y - r * 0.3, r * 0.28);
       }
       return;
     }
@@ -153,19 +218,19 @@ export class ArenaView {
     const hw = sh.hw * grow, hh = sh.hh * grow;
     const ang = sh.type === "obb" ? hz.angle : 0;
     if (lethal || !telegraphing) {
-      g.fillStyle(PALETTE.red, 0.12 * alpha); this.fillRot(g, hz.x, hz.y, hw + 8, hh + 8, ang);
-      g.fillStyle(PALETTE.red, 0.25 * alpha); this.fillRot(g, hz.x, hz.y, hw + 4, hh + 4, ang);
+      g.fillStyle(RED, 0.12 * alpha); this.fillRot(g, hz.x, hz.y, hw + 8, hh + 8, ang);
+      g.fillStyle(RED, 0.25 * alpha); this.fillRot(g, hz.x, hz.y, hw + 4, hh + 4, ang);
     }
-    g.fillStyle(PALETTE.red, fillA); this.fillRot(g, hz.x, hz.y, hw, hh, ang);
-    if (strokeA > 0) { g.lineStyle(2.5, PALETTE.red, strokeA); this.strokeRot(g, hz.x, hz.y, hw, hh, ang); }
-    if (hz.kind === "rotor") g.fillStyle(PALETTE.redHot, alpha).fillCircle(hz.x, hz.y, hh * 0.7);
+    g.fillStyle(RED, fillA); this.fillRot(g, hz.x, hz.y, hw, hh, ang);
+    if (strokeA > 0) { g.lineStyle(2.5, RED, strokeA); this.strokeRot(g, hz.x, hz.y, hw, hh, ang); }
+    if (hz.kind === "rotor") g.fillStyle(HOT, alpha).fillCircle(hz.x, hz.y, hh * 0.7);
 
     if (hz.kind === "slider" && telegraphing) {
       // Chevrons point where it will travel.
       const len = Math.hypot(hz.vx, hz.vy) || 1;
       const ux = hz.vx / len, uy = hz.vy / len;
       const vx = -uy, vy = ux;
-      g.lineStyle(3, PALETTE.red, strokeA);
+      g.lineStyle(3, RED, strokeA);
       for (let i = 1; i <= 2; i++) {
         const d = Math.abs(ux) * hw + Math.abs(uy) * hh + 6 + i * 14;
         const cx = hz.x + ux * d, cy = hz.y + uy * d;

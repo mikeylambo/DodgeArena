@@ -16,6 +16,7 @@ const levels: number[] = [];
 const deaths: Record<string, number> = {};
 let survivedL1 = 0;
 let coins = 0;
+let eatenTotal = 0;
 for (let i = 0; i < runs; i++) {
   const run = createRun({ seed: `bot-${i}`, orientation });
   const bot = new DodgeBot(botOpts);
@@ -28,6 +29,7 @@ for (let i = 0; i < runs; i++) {
   times.push(run.state.time);
   levels.push(run.state.level);
   coins += run.state.coinsCollected;
+  eatenTotal += run.state.eaten;
   const k = run.state.deathKind ?? "timeout";
   deaths[k] = (deaths[k] ?? 0) + 1;
 }
@@ -36,5 +38,5 @@ const q = (p: number) => times[Math.floor(p * (times.length - 1))]!.toFixed(1);
 console.log(`runs=${runs} hz=${SIM_HZ} orientation=${orientation}`);
 console.log(`survival s: p10=${q(0.1)} p25=${q(0.25)} median=${q(0.5)} p75=${q(0.75)} p90=${q(0.9)}`);
 console.log(`level-1 survival: ${(100 * survivedL1 / runs).toFixed(1)}%`);
-console.log(`mean level at death: ${(levels.reduce((a, b) => a + b, 0) / runs).toFixed(2)}  mean coins: ${(coins / runs).toFixed(1)}`);
+console.log(`mean level at death: ${(levels.reduce((a, b) => a + b, 0) / runs).toFixed(2)}  mean coins: ${(coins / runs).toFixed(1)}  mean eaten: ${(eatenTotal / runs).toFixed(1)}`);
 console.log(`deaths by kind:`, deaths);

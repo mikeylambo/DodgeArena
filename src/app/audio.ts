@@ -1,6 +1,6 @@
 import type { AudioBusName, AudioSystem } from "@slu/web-shell";
 
-export type SfxId = "coin" | "near_miss" | "level_up" | "death" | "start";
+export type SfxId = "coin" | "near_miss" | "level_up" | "death" | "start" | "frenzy_start" | "eat" | "frenzy_end";
 
 /**
  * Asset-free WebAudio synth implementing the shell's AudioSystem contract, so
@@ -60,6 +60,20 @@ export class SynthAudio implements AudioSystem {
       case "death":
         this.tone("sawtooth", 220, 40, t, 0.45, 0.25 * v);
         this.noise(t, 0.35, 0.3 * v, 900);
+        break;
+      case "frenzy_start":
+        this.tone("sawtooth", 110, 880, t, 0.32, 0.14 * v);
+        [0, 3, 7, 12].forEach((semi, i) => this.tone("square", 440 * Math.pow(2, semi / 12), 440 * Math.pow(2, semi / 12), t + 0.05 + i * 0.045, 0.12, 0.07 * v));
+        this.noise(t, 0.25, 0.16 * v, 2500);
+        break;
+      case "eat":
+        // Chomp: a pitched drop plus a crunch; pitch climbs with the chain.
+        this.tone("square", 660 * p, 180 * p, t, 0.11, 0.16 * v);
+        this.tone("triangle", 1320 * p, 1320 * p, t + 0.03, 0.08, 0.1 * v);
+        this.noise(t, 0.06, 0.22 * v, 3200);
+        break;
+      case "frenzy_end":
+        this.tone("triangle", 660, 220, t, 0.22, 0.12 * v);
         break;
       case "start":
         this.tone("sine", 440, 660, t, 0.12, 0.12 * v);

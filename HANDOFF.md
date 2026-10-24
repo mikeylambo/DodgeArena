@@ -2,7 +2,11 @@
 
 Living checklist for Dodge Arena.
 
-## Status: M0 Complete & Verified
+## Status: M1 "Turn the Tables" shipped (on top of verified M0)
+
+- [x] **Frenzy / Turn the Tables**: every 15 coins (HUD meter under BEST), the arena inverts for 3.0 s. Hazards turn cyan and tremble, the player turns red. Touching a hazard eats it for chained points: 25 → 50 → 100 → 200 → 400 (capped). Lasers are cleared and can't spawn mid-frenzy. The last 0.9 s blink as a warning, and 0.6 s of flicker-immunity follows. Tuning lives in `tuning.json → frenzy`.
+- [x] Bot hunts during frenzies. Median survival is now ~80 s (still inside the 45–90 s band), with 100% level-1 survival. `tests/frenzy.test.mjs` covers the trigger, scoring, laser rule, and no deaths during frenzy or grace.
+- [x] Dev: with `?dev=1`, `window.__game` is exposed for console tuning, e.g. `__game.run.state.frenzyCharge = 14`.
 
 - [x] **Shell Vendoring**: Vendored at `vendor/web-shell` (mikeylambo/Web-Game-Shell-v1.02 `main` @ 6f08d17, v1.1.0), unmodified.
 - [x] **Simulation Core (`src/sim/*`)**:
@@ -66,6 +70,5 @@ Living checklist for Dodge Arena.
 2. **Feel Pass & Tuning**:
    Tweak player speed, hazard telegraphs, or hitbox sizes in `src/content/tuning.json`. Run `npm test` after any edits to keep the bot survival band within 45–90 seconds.
 3. **M1 Feature Implementation (The Core Flips)**:
-   - **Turn the Tables**: Every 10 coins, activate a 3-second predator mode where the player turns red and can eat red hazards for bonus points.
    - **Bank or Bust**: Unbanked coins are carried at risk and only score when dropped at a drifting bank zone. Dying forfeits unbanked coins.
    - **Music-driven spawns**: Sync hazard waves to your custom beats/tracks.

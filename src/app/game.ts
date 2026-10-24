@@ -65,6 +65,7 @@ export class Game {
     this.input.onPause = () => this.togglePause();
     this.audioLifecycle.installVisibility();
     document.addEventListener("visibilitychange", () => { if (document.hidden && this.phase === "playing") this.togglePause(); });
+    if (DEV) (window as unknown as { __game: Game }).__game = this; // console/automation access
     this.audio.setMuted(persistence.data.muted);
     this.hud.setMuted(persistence.data.muted);
   }
@@ -104,6 +105,7 @@ export class Game {
     this.run = createRun(config);
     this.fx.setRng(new DeterministicRng(stableHashString(`${seed}:view-fx`)));
     this.fx.clear();
+    this.arena.clearPopups();
     this.layout();
     this.hud.stats(0, this.persistence.best(board), this.run.state.level);
   }
@@ -199,6 +201,7 @@ export class Game {
     });
     this.flashRect.setFillStyle(this.fx.flashTint, this.fx.flash);
     this.hud.stats(s.score, Math.max(s.score, this.persistence.best(this.board)), s.level);
+    this.hud.meterState(s.frenzy > 0 ? s.frenzy / TUNING.frenzy.duration : s.frenzyCharge / TUNING.frenzy.charge, s.frenzy > 0);
 
     if (this.phase === "playing" && this.lastRestartMs < 0) {
       this.lastRestartMs = performance.now() - this.restartTapAt;
@@ -230,6 +233,26 @@ export class Game {
           this.audio.playSfx("level_up");
           this.telemetry.record("level_up", { level: ev.level, t: +s.time.toFixed(2) });
           break;
+        case "frenzy_start":
+          this.fx.frenzyStart(s.player.x, s.player.y, s.arena.w, s.arena.h);
+          this.arena.popup(s.player.x, s.player.y - 40, "FRENZY!", "#ff6a7c", 1.3);
+          this.audio.playSfx("frenzy_start");
+          this.playerPop = 1.5;
+          this.telemetry.record("frenzy_start", { t: +s.time.toFixed(2), hazards: s.hazards.length });
+          break;
+        case "eat":
+          this.fx.eat(ev.x, ev.y, ev.chain);
+          this.arena.popup(ev.x, ev.y, `+${ev.points}`, "#c8fdff", 0.8 + Math.min(ev.chain, 5) * 0.12);
+          this.audio.playSfx("eat", { pitch: Math.pow(2, Math.min(ev.chain - 1, 12) / 12) });
+          this.playerPop = 1.35;
+          this.hud.punchScore();
+          this.telemetry.record("eat", { kind: ev.kind, chain: ev.chain, points: ev.points, t: +s.time.toFixed(2) });
+          break;
+        case "frenzy_end":
+          this.fx.frenzyEnd(s.player.x, s.player.y);
+          this.audio.playSfx("frenzy_end");
+          this.telemetry.record("frenzy_end", { chain: s.chain, t: +s.time.toFixed(2) });
+          break;
         case "death":
           this.onDeath(ev.kind);
           break;
@@ -249,7 +272,7 @@ export class Game {
     void this.persistRun();
   }
 
-  private lastResult = { score: 0, best: 0, level: 1, newBest: false };
+  private lastResult = { score: 0, best: 0, level: 1, newBest: false, eaten: 0 };
 
   private async persistRun(): Promise<void> {
     const s = this.run.state;
@@ -259,7 +282,7 @@ export class Game {
     p.data.runs++;
     p.data.firstRunDone = true;
     if (newBest) p.data.best[this.board] = s.score;
-    this.lastResult = { score: s.score, best: Math.max(prevBest, s.score), level: s.level, newBest };
+    this.lastResult = { score: s.score, best: Math.max(prevBest, s.score), level: s.level, newBest, eaten: s.eaten };
     const replay = this.recorder?.finish(s.tick);
     this.ghostRec?.finish({ x: s.player.x, y: s.player.y, z: 0 });
     const ghost: GhostRecording | undefined = this.ghostRec?.serialize({ seed: s.seed, levelId: this.board, score: s.score });
