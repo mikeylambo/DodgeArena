@@ -218,6 +218,7 @@ export class Game {
       switch (ev.type) {
         case "coin":
           this.fx.coin(ev.x, ev.y);
+          this.arena.ripple(ev.x, ev.y, 5, 0.35, 600);
           this.playerPop = 1.28;
           this.audio.playSfx("coin", { pitch: Math.pow(2, Math.min(ev.combo, 12) / 12) });
           this.hud.punchScore();
@@ -230,10 +231,21 @@ export class Game {
           break;
         case "level_up":
           this.fx.levelUp(s.arena.w, s.arena.h);
+          this.arena.ripple(s.arena.w / 2, s.arena.h / 2, 18, 1.1, 1400);
           this.audio.playSfx("level_up");
           this.telemetry.record("level_up", { level: ev.level, t: +s.time.toFixed(2) });
           break;
+        case "lasso":
+          this.fx.lasso(ev.caught, ev.count);
+          this.arena.lassoFlash(ev.poly);
+          this.arena.ripple(ev.cx, ev.cy, -14 - 3 * Math.min(ev.count, 5), 0.5, -700);
+          this.arena.popup(ev.cx, ev.cy, ev.count > 1 ? `LASSO x${ev.count}  +${ev.points}` : `+${ev.points}`, "#ffffff", 0.9 + Math.min(ev.count, 5) * 0.12);
+          this.audio.playSfx("lasso", { pitch: Math.pow(2, Math.min(ev.count - 1, 7) / 12) });
+          this.hud.punchScore();
+          this.telemetry.record("lasso", { count: ev.count, points: ev.points, t: +s.time.toFixed(2) });
+          break;
         case "frenzy_start":
+          this.arena.ripple(s.player.x, s.player.y, 26, 0.9, 1100);
           this.fx.frenzyStart(s.player.x, s.player.y, s.arena.w, s.arena.h);
           this.arena.popup(s.player.x, s.player.y - 40, "FRENZY!", "#ff6a7c", 1.3);
           this.audio.playSfx("frenzy_start");
@@ -242,6 +254,7 @@ export class Game {
           break;
         case "eat":
           this.fx.eat(ev.x, ev.y, ev.chain);
+          this.arena.ripple(ev.x, ev.y, 10, 0.45, 800);
           this.arena.popup(ev.x, ev.y, `+${ev.points}`, "#c8fdff", 0.8 + Math.min(ev.chain, 5) * 0.12);
           this.audio.playSfx("eat", { pitch: Math.pow(2, Math.min(ev.chain - 1, 12) / 12) });
           this.playerPop = 1.35;
@@ -264,6 +277,7 @@ export class Game {
 
   private onDeath(kind: string): void {
     const s = this.run.state;
+    this.arena.ripple(s.player.x, s.player.y, 34, 1.0, 1000);
     this.phase = "dying";
     this.dimTimer = 0;
     this.audio.playSfx("death");

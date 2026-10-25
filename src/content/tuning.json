@@ -40,7 +40,16 @@
     "warn": 0.9,
     "grace": 0.6,
     "eatBase": 25,
-    "eatMax": 400
+    "eatMax": 400,
+    "grazeCharge": 1
+  },
+  "lasso": {
+    "$comment": "Your path leaves a light trail (capped by length and age). When the trail crosses itself, the loop it closes destroys every non-laser hazard inside. Each catch is worth pointsPer x the number caught, so bigger loops pay more than linearly. minArea ignores jitter loops.",
+    "sampleDist": 6,
+    "maxLength": 900,
+    "maxAge": 1.1,
+    "minArea": 2500,
+    "pointsPer": 30
   },
   "juice": {
     "nearMissPlayerWidths": 0.3,

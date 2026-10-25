@@ -3,7 +3,7 @@ import { RunRng } from "./rng.js";
 import { moveHazard } from "./hazards.js";
 import { runSpawner, clearOfHazards } from "./spawner.js";
 import { gapToHazard, isLethal, clamp } from "./collide.js";
-import type { RunConfig, RunState, StepInput } from "./types.js";
+import type { Hazard, RunConfig, RunState, StepInput } from "./types.js";
 
 export const SIM_HZ = TUNING.sim.hz;
 export const SIM_DT = 1 / SIM_HZ;
@@ -25,7 +25,7 @@ export function createRun(config: RunConfig): Run {
     breather: 0.6, // brief settle-in before the first spawn
     spawnTimer: 0,
     score: 0, coinsCollected: 0, combo: 0, lastCoinTime: -Infinity, nearMisses: 0,
-    frenzyCharge: 0, frenzy: 0, grace: 0, chain: 0, eaten: 0,
+    trail: [], lassos: 0, frenzyCharge: 0, frenzy: 0, grace: 0, chain: 0, eaten: 0,
     player: { x: dims.width / 2, y: dims.height / 2, size, hit: (size * TUNING.player.hitboxScale) / 2, pendingX: 0, pendingY: 0 },
     coins: [], coinRespawns: [],
     hazards: [], nextId: 1,
@@ -43,6 +43,7 @@ export function step(run: Run, input: StepInput, dt: number = SIM_DT): RunState 
   if (!s.alive) return s;
 
   movePlayer(s, input, dt);
+  updateTrail(s);
   tickFrenzy(s, dt);
 
   // Hazards
@@ -139,8 +140,84 @@ function updateCoins(run: Run, _dt: number): void {
     s.coinsThisLevel++;
     s.score += C.value;
     s.events.push({ type: "coin", x: c.x, y: c.y, combo: s.combo, score: s.score });
-    if (s.frenzy <= 0 && ++s.frenzyCharge >= TUNING.frenzy.charge) startFrenzy(s);
+    addCharge(s, 1);
   }
+}
+
+/** Coins and grazes both feed the frenzy meter. */
+function addCharge(s: RunState, n: number): void {
+  if (s.frenzy > 0) return;
+  s.frenzyCharge += n;
+  if (s.frenzyCharge >= TUNING.frenzy.charge) startFrenzy(s);
+}
+
+/** Polygon area via the shoelace formula (absolute). */
+function polyArea(poly: { x: number; y: number }[]): number {
+  let a = 0;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) a += (poly[j]!.x + poly[i]!.x) * (poly[j]!.y - poly[i]!.y);
+  return Math.abs(a / 2);
+}
+
+export function pointInPoly(x: number, y: number, poly: { x: number; y: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i]!, b = poly[j]!;
+    if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** Segment p1p2 vs p3p4 intersection point, or null. */
+function segHit(p1: { x: number; y: number }, p2: { x: number; y: number }, p3: { x: number; y: number }, p4: { x: number; y: number }): { x: number; y: number } | null {
+  const d = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x);
+  if (d === 0) return null;
+  const u = ((p3.x - p1.x) * (p4.y - p3.y) - (p3.y - p1.y) * (p4.x - p3.x)) / d;
+  const v = ((p3.x - p1.x) * (p2.y - p1.y) - (p3.y - p1.y) * (p2.x - p1.x)) / d;
+  return u > 0 && u <= 1 && v >= 0 && v <= 1 ? { x: p1.x + u * (p2.x - p1.x), y: p1.y + u * (p2.y - p1.y) } : null;
+}
+
+/** Sample the light trail, age/length-limit it, and resolve any closed loop into a lasso. */
+function updateTrail(s: RunState): void {
+  const L = TUNING.lasso, tr = s.trail, p = s.player;
+  while (tr.length && s.time - tr[0]!.t > L.maxAge) tr.shift();
+  const last = tr[tr.length - 1];
+  if (last && Math.hypot(p.x - last.x, p.y - last.y) < L.sampleDist) return;
+  const np = { x: p.x, y: p.y, t: s.time };
+  if (last) {
+    // Newest segment vs all older, non-adjacent segments; newest-first finds the tightest loop.
+    for (let i = tr.length - 3; i >= 0; i--) {
+      const hit = segHit(last, np, tr[i]!, tr[i + 1]!);
+      if (!hit) continue;
+      const poly = [hit, ...tr.slice(i + 1).map(q => ({ x: q.x, y: q.y })), { x: np.x, y: np.y }];
+      if (polyArea(poly) >= L.minArea) closeLasso(s, poly);
+      tr.length = 0;
+      tr.push({ x: hit.x, y: hit.y, t: s.time }, np);
+      return;
+    }
+  }
+  tr.push(np);
+  let len = 0;
+  for (let i = tr.length - 1; i > 0; i--) {
+    len += Math.hypot(tr[i]!.x - tr[i - 1]!.x, tr[i]!.y - tr[i - 1]!.y);
+    if (len > L.maxLength) { tr.splice(0, i); break; }
+  }
+}
+
+function closeLasso(s: RunState, poly: { x: number; y: number }[]): void {
+  const caught: { x: number; y: number; kind: Hazard["kind"] }[] = [];
+  for (let i = s.hazards.length - 1; i >= 0; i--) {
+    const hz = s.hazards[i]!;
+    if (hz.kind === "laser" || !pointInPoly(hz.x, hz.y, poly)) continue;
+    caught.push({ x: hz.x, y: hz.y, kind: hz.kind });
+    s.hazards.splice(i, 1);
+  }
+  if (!caught.length) return;
+  let cx = 0, cy = 0;
+  for (const q of poly) { cx += q.x; cy += q.y; }
+  const points = TUNING.lasso.pointsPer * caught.length * caught.length;
+  s.score += points;
+  s.lassos++;
+  s.events.push({ type: "lasso", count: caught.length, points, cx: cx / poly.length, cy: cy / poly.length, poly, caught });
 }
 
 function startFrenzy(s: RunState): void {
@@ -197,6 +274,7 @@ function checkHazards(s: RunState): void {
     if (g < nearDist && s.time - hz.lastNearMiss > TUNING.juice.nearMissCooldown) {
       hz.lastNearMiss = s.time;
       s.nearMisses++;
+      addCharge(s, TUNING.frenzy.grazeCharge);
       s.events.push({ type: "near_miss", hazardId: hz.id, kind: hz.kind, x: p.x, y: p.y });
     }
   }
@@ -206,7 +284,7 @@ function checkHazards(s: RunState): void {
 export function hashRun(run: Run): string {
   const s = run.state;
   const json = JSON.stringify({
-    tick: s.tick, level: s.level, score: s.score, fz: [s.frenzyCharge, s.frenzy, s.grace, s.chain], alive: s.alive, death: s.deathKind,
+    tick: s.tick, level: s.level, score: s.score, lz: [s.trail.length, s.lassos], fz: [s.frenzyCharge, s.frenzy, s.grace, s.chain], alive: s.alive, death: s.deathKind,
     p: [s.player.x, s.player.y, s.player.pendingX, s.player.pendingY],
     hz: s.hazards.map(h => [h.id, h.kind, h.x, h.y, h.angle, h.age]),
     coins: s.coins.map(c => [c.id, c.x, c.y]),

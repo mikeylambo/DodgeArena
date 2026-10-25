@@ -11,7 +11,8 @@ export interface Tuning {
   player: { size: number; hitboxScale: number; keySpeed: number; dragGain: number; dragMaxSpeed: number; dragMaxPending: number };
   coins: { radius: number; onScreen: number; value: number; respawnDelay: number; minDistFromPlayer: number; hazardClearance: number; edgeMargin: number; comboWindow: number };
   fairness: { minTelegraph: number; safeSpawnPlayerWidths: number; breatherAfterLevelUp: number; spawnAttempts: number; fadeOutSafe: number };
-  frenzy: { charge: number; duration: number; warn: number; grace: number; eatBase: number; eatMax: number };
+  frenzy: { charge: number; duration: number; warn: number; grace: number; eatBase: number; eatMax: number; grazeCharge: number };
+  lasso: { sampleDist: number; maxLength: number; maxAge: number; minArea: number; pointsPer: number };
   juice: { nearMissPlayerWidths: number; nearMissCooldown: number; hitstopMs: number };
   levels: {
     secondsPerLevel: number;

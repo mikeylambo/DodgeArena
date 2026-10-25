@@ -56,6 +56,15 @@ export class FxSystem {
     this.ring(x, y, 12, 60 + k * 10, 0.3, PALETTE.preyHot, 4);
     this.shake(4 + k, 0.16);
   }
+  lasso(caught: { x: number; y: number }[], count: number): void {
+    for (const c of caught) {
+      this.burst(c.x, c.y, 18, PALETTE.red, [120, 420], [0.25, 0.55], [3, 6]);
+      this.burst(c.x, c.y, 8, PALETTE.white, [60, 200], [0.15, 0.3], [2, 3.5]);
+      this.ring(c.x, c.y, 40, 4, 0.25, PALETTE.playerCore, 4);
+    }
+    this.flashScreen(0.12 + 0.04 * Math.min(count, 5));
+    this.shake(5 + 2 * Math.min(count, 5), 0.2);
+  }
   frenzyStart(x: number, y: number, w: number, h: number): void {
     this.flashScreen(0.35, PALETTE.red);
     this.ring(x, y, 20, Math.max(w, h), 0.55, PALETTE.red, 8);

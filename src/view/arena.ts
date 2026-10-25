@@ -19,6 +19,16 @@ export class ArenaView {
   private readonly ghostG: Phaser.GameObjects.Graphics;
   private readonly playerG: Phaser.GameObjects.Graphics;
   private readonly frameG: Phaser.GameObjects.Graphics;
+  private readonly warpG: Phaser.GameObjects.Graphics;
+  private readonly trailG: Phaser.GameObjects.Graphics;
+  /** Grid ripples (world units). amp > 0 pushes out, < 0 pulls in. */
+  private readonly ripples: { x: number; y: number; t: number; life: number; amp: number; speed: number }[] = [];
+  private loopFlash: { poly: { x: number; y: number }[]; life: number } | null = null;
+  private lastPX = NaN;
+  private lastPY = NaN;
+  private speed = 0;
+  private arenaW = 0;
+  private arenaH = 0;
   private readonly popups: { t: Phaser.GameObjects.Text; life: number; x: number; y: number }[] = [];
   readonly fxG: Phaser.GameObjects.Graphics;
   scale = 1;
@@ -35,6 +45,8 @@ export class ArenaView {
     this.playerG = scene.add.graphics();
     this.fxG = scene.add.graphics();
     this.frameG = scene.add.graphics();
+    this.warpG = scene.add.graphics();
+    this.trailG = scene.add.graphics();
     const texts = [];
     for (let i = 0; i < 8; i++) {
       const t = scene.add.text(0, 0, "", { fontFamily: "ui-sans-serif, system-ui, sans-serif", fontSize: "34px", fontStyle: "900", color: "#ffffff", stroke: "#0d0e14", strokeThickness: 6 })
@@ -42,7 +54,7 @@ export class ArenaView {
       this.popups.push({ t, life: 0, x: 0, y: 0 });
       texts.push(t);
     }
-    this.root = scene.add.container(0, 0, [this.gridG, this.frameG, this.coinG, this.ghostG, this.hazG, this.playerG, this.fxG, ...texts]);
+    this.root = scene.add.container(0, 0, [this.gridG, this.warpG, this.frameG, this.coinG, this.trailG, this.ghostG, this.hazG, this.playerG, this.fxG, ...texts]);
   }
 
   /** Fit an arena of w×h world units into the viewport (device px), below `topInset`. */
@@ -61,18 +73,19 @@ export class ArenaView {
 
   private drawGrid(w: number, h: number): void {
     const g = this.gridG;
-    const cell = TUNING.arena.cell;
+    this.arenaW = w; this.arenaH = h;
     g.clear();
     g.fillStyle(PALETTE.bg, 1).fillRect(0, 0, w, h);
-    g.lineStyle(1.5, PALETTE.grid, 1);
-    for (let x = cell; x < w; x += cell) g.lineBetween(x, 0, x, h);
-    for (let y = cell; y < h; y += cell) g.lineBetween(0, y, w, y);
     g.lineStyle(3, PALETTE.border, 1).strokeRect(0, 0, w, h);
   }
 
   draw(s: RunState, dtMs: number, opts: { ghost: { x: number; y: number } | null; playerPop: number; showPlayer: boolean }): void {
     this.clock += dtMs / 1000;
+    const dt = dtMs / 1000;
+    this.trackSpeed(s, dt);
+    this.drawWarpGrid(s, dt);
     this.drawFrame(s);
+    this.drawTrail(s, dt);
     this.drawCoins(s);
     this.drawHazards(s);
     this.drawGhost(opts.ghost, s.player.size);
@@ -85,6 +98,102 @@ export class ArenaView {
     const p = this.popups.reduce((a, b) => (b.life < a.life ? b : a));
     p.x = x; p.y = y; p.life = 0.8;
     p.t.setText(text).setColor(color).setScale(scale).setPosition(x, y).setAlpha(1).setVisible(true);
+  }
+
+  /** Shockwave through the grid. */
+  ripple(x: number, y: number, amp: number, life = 0.7, speed = 900): void {
+    if (this.ripples.length >= 6) this.ripples.shift();
+    this.ripples.push({ x, y, t: 0, life, amp, speed });
+  }
+
+  lassoFlash(poly: { x: number; y: number }[]): void { this.loopFlash = { poly, life: 0.4 }; }
+
+  private trackSpeed(s: RunState, dt: number): void {
+    const p = s.player;
+    if (dt > 0 && Number.isFinite(this.lastPX)) {
+      const v = Math.hypot(p.x - this.lastPX, p.y - this.lastPY) / dt;
+      // Teleports between runs shouldn't spike the warp.
+      this.speed += (Math.min(v, 2000) - this.speed) * Math.min(1, dt / 0.08);
+    }
+    this.lastPX = p.x; this.lastPY = p.y;
+  }
+
+  /**
+   * The grid is a membrane: the cube bulges it (more when moving fast) and events send
+   * ripples through it. Drawn as polylines each frame; ~2–3k points at 1600×900.
+   */
+  private drawWarpGrid(s: RunState, dt: number): void {
+    const g = this.warpG, cell = TUNING.arena.cell, step = cell / 2;
+    const w = this.arenaW, h = this.arenaH;
+    g.clear();
+    for (let i = this.ripples.length - 1; i >= 0; i--) {
+      const r = this.ripples[i]!;
+      r.t += dt;
+      if (r.t >= r.life) this.ripples.splice(i, 1);
+    }
+    const p = s.player, alive = s.alive;
+    const bulge = alive ? 5 + 15 * Math.min(1, this.speed / 1400) : 0;
+    const sig2 = 2 * 85 * 85;
+    const rip = this.ripples;
+    const warp = (x: number, y: number, out: { x: number; y: number }) => {
+      let ox = 0, oy = 0;
+      if (bulge > 0) {
+        const dx = x - p.x, dy = y - p.y, d2 = dx * dx + dy * dy;
+        if (d2 < 90000) {
+          const d = Math.sqrt(d2) || 1, k = bulge * Math.exp(-d2 / sig2);
+          ox += (dx / d) * k; oy += (dy / d) * k;
+        }
+      }
+      for (const r of rip) {
+        const dx = x - r.x, dy = y - r.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+        // Negative speed = implosion: the front starts wide and contracts onto the point.
+        const front = r.speed < 0 ? -r.speed * r.life + r.t * r.speed : r.t * r.speed, z = (d - front) / 45;
+        if (z < -3 || z > 3) continue;
+        const k = r.amp * Math.exp(-z * z) * (1 - r.t / r.life);
+        ox += (dx / d) * k; oy += (dy / d) * k;
+      }
+      // Pin the border so the arena edge never wobbles.
+      const edge = Math.min(1, x / cell, (w - x) / cell, y / cell, (h - y) / cell);
+      out.x = x + ox * edge; out.y = y + oy * edge;
+    };
+    const color = s.frenzy > 0 ? 0x2c1820 : PALETTE.grid;
+    g.lineStyle(1.5, color, 1);
+    const q = { x: 0, y: 0 };
+    for (let x = cell; x < w; x += cell) {
+      g.beginPath();
+      for (let y = 0; y <= h; y += step) { warp(x, y, q); if (y === 0) g.moveTo(q.x, q.y); else g.lineTo(q.x, q.y); }
+      g.strokePath();
+    }
+    for (let y = cell; y < h; y += cell) {
+      g.beginPath();
+      for (let x = 0; x <= w; x += step) { warp(x, y, q); if (x === 0) g.moveTo(q.x, q.y); else g.lineTo(q.x, q.y); }
+      g.strokePath();
+    }
+  }
+
+  /** Light trail: fades with age; this is the lasso rope. */
+  private drawTrail(s: RunState, dt: number): void {
+    const g = this.trailG, tr = s.trail, maxAge = TUNING.lasso.maxAge;
+    g.clear();
+    if (this.loopFlash) {
+      const f = this.loopFlash;
+      f.life -= dt;
+      if (f.life <= 0) this.loopFlash = null;
+      else {
+        const k = f.life / 0.4;
+        g.fillStyle(PALETTE.playerCore, 0.35 * k).fillPoints(f.poly, true);
+        g.lineStyle(4 * k + 1, PALETTE.white, k).strokePoints(f.poly, true);
+      }
+    }
+    if (!s.alive || tr.length < 2) return;
+    const col = s.frenzy > 0 ? PALETTE.red : PALETTE.player;
+    for (let i = 1; i < tr.length; i++) {
+      const a = tr[i - 1]!, b = tr[i]!;
+      const k = Math.max(0, 1 - (s.time - b.t) / maxAge);
+      if (k <= 0) continue;
+      g.lineStyle(10 * k, col, 0.12 * k).lineBetween(a.x, a.y, b.x, b.y);
+      g.lineStyle(3.5 * k + 0.5, col, 0.85 * k).lineBetween(a.x, a.y, b.x, b.y);
+    }
   }
 
   clearPopups(): void { for (const p of this.popups) { p.life = 0; p.t.setVisible(false); } }
