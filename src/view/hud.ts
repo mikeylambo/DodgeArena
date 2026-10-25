@@ -8,6 +8,7 @@ export interface HudHandlers {
   onPause(): void;
   onMute(): void;
   onMode(mode: Mode): void;
+  onColorblind(): void;
 }
 
 export class Hud {
@@ -21,10 +22,8 @@ export class Hud {
   private readonly hint = $("hint");
   private readonly dim = $("dim");
   private readonly dev = $("dev");
-  private readonly meter = $("hud-meter");
-  private readonly meterFill = this.meter.firstElementChild as HTMLElement;
-  private lastMeter = -1;
   private readonly muteBtn = $<HTMLButtonElement>("btn-mute");
+  private readonly cbBtn = $<HTMLButtonElement>("btn-cb");
   private last = { score: -1, best: -1, level: -1 };
 
   constructor(h: HudHandlers) {
@@ -32,6 +31,7 @@ export class Hud {
     $("btn-daily").addEventListener("click", e => { e.stopPropagation(); h.onPlay("daily"); });
     $("btn-pause").addEventListener("pointerdown", e => { e.stopPropagation(); h.onPause(); });
     this.muteBtn.addEventListener("pointerdown", e => { e.stopPropagation(); h.onMute(); });
+    this.cbBtn.addEventListener("pointerdown", e => { e.stopPropagation(); h.onColorblind(); });
     for (const btn of document.querySelectorAll<HTMLButtonElement>("[data-mode]")) {
       btn.addEventListener("pointerdown", e => { e.stopPropagation(); h.onMode(btn.dataset.mode as Mode); });
     }
@@ -48,25 +48,18 @@ export class Hud {
       this.last.level = level;
     }
   }
-  /** Frenzy meter: fills with charge (0..1), or drains with time left while `frenzy`. */
-  meterState(fill: number, frenzy: boolean): void {
-    const q = Math.round(fill * 200) / 200 + (frenzy ? 2 : 0);
-    if (q === this.lastMeter) return;
-    this.lastMeter = q;
-    this.meter.classList.toggle("frenzy", frenzy);
-    this.meterFill.style.transform = `scaleX(${fill})`;
-  }
   punchScore(): void { this.punch(this.score); }
   setMode(mode: Mode): void {
     this.mode.textContent = mode === "daily" ? "DAILY" : "";
     for (const btn of document.querySelectorAll<HTMLButtonElement>("[data-mode]")) btn.classList.toggle("on", btn.dataset.mode === mode);
   }
+  setColorblind(on: boolean): void { this.cbBtn.classList.toggle("on", on); this.cbBtn.setAttribute("aria-pressed", String(on)); }
   setMuted(m: boolean): void { this.muteBtn.classList.toggle("muted", m); this.muteBtn.setAttribute("aria-pressed", String(m)); }
 
   showCard(v: boolean): void { this.card.hidden = !v; }
   showHint(v: boolean): void { this.hint.classList.toggle("on", v); }
   showPaused(v: boolean): void { this.paused.hidden = !v; this.dim.classList.toggle("on", v || !this.over.hidden); }
-  showOver(v: boolean, r?: { score: number; best: number; level: number; newBest: boolean; eaten: number }): void {
+  showOver(v: boolean, r?: { score: number; best: number; level: number; newBest: boolean }): void {
     this.over.hidden = !v;
     this.dim.classList.toggle("on", v);
     if (v && r) {
@@ -74,8 +67,6 @@ export class Hud {
       $("over-best").textContent = `BEST: ${r.best}`;
       $("over-level").textContent = `LEVEL ${r.level}`;
       $("over-new").hidden = !r.newBest;
-      $("over-eaten").textContent = `${r.eaten} EATEN`;
-      $("over-eaten").hidden = $("over-eaten-sep").hidden = r.eaten === 0;
     }
   }
   devText(t: string | null): void { this.dev.hidden = t === null; if (t !== null) this.dev.textContent = t; }

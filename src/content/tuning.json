@@ -33,16 +33,6 @@
     "spawnAttempts": 24,
     "fadeOutSafe": 0.25
   },
-  "frenzy": {
-    "$comment": "Turn the Tables: every `charge` coins, the arena inverts for `duration` s. Hazards turn edible (lasers are cleared), spawning continues (new hazards arrive as prey), and each eat in a chain doubles in value up to `eatMax`. The last `warn` s blink as a warning; `grace` s of immunity follow so nothing ends a frenzy unfairly.",
-    "charge": 15,
-    "duration": 3.0,
-    "warn": 0.9,
-    "grace": 0.6,
-    "eatBase": 25,
-    "eatMax": 400,
-    "grazeCharge": 1
-  },
   "setPieces": {
     "$comment": "Every `every` levels an authored wave replaces random spawns, cycling cage -> wall -> swarm. beats = seconds after level-up at which each pulse fires; tail = extra quiet seconds after the last beat.",
     "every": 5,

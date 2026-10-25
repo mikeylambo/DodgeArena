@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { PALETTE } from "./palette.js";
+import { PALETTE, heatVersion } from "./palette.js";
 import { isLethal } from "../sim/collide.js";
 import { TUNING } from "../sim/tuning.js";
 import type { Hazard, RunState } from "../sim/types.js";
@@ -18,7 +18,6 @@ export class ArenaView {
   private readonly hazG: Phaser.GameObjects.Graphics;
   private readonly ghostG: Phaser.GameObjects.Graphics;
   private readonly playerG: Phaser.GameObjects.Graphics;
-  private readonly frameG: Phaser.GameObjects.Graphics;
   private readonly warpG: Phaser.GameObjects.Graphics;
   /** Grid ripples (world units). amp > 0 pushes out, < 0 pulls in. */
   private readonly ripples: { x: number; y: number; t: number; life: number; amp: number; speed: number }[] = [];
@@ -37,14 +36,15 @@ export class ArenaView {
   private readonly squash = new Map<number, { svx: number; svy: number; axis: "x" | "y"; t: number }>();
   private clock = 0;
 
-  constructor(scene: Phaser.Scene) {
+  private paletteVersion = -1;
+
+  constructor(private readonly scene: Phaser.Scene) {
     this.gridG = scene.add.graphics();
     this.coinG = scene.add.graphics();
     this.hazG = scene.add.graphics();
     this.ghostG = scene.add.graphics();
     this.playerG = scene.add.graphics();
     this.fxG = scene.add.graphics();
-    this.frameG = scene.add.graphics();
     this.warpG = scene.add.graphics();
 
     const texts = [];
@@ -54,7 +54,7 @@ export class ArenaView {
       this.popups.push({ t, life: 0, x: 0, y: 0 });
       texts.push(t);
     }
-    this.root = scene.add.container(0, 0, [this.gridG, this.warpG, this.frameG, this.coinG, this.ghostG, this.hazG, this.playerG, this.fxG, ...texts]);
+    this.root = scene.add.container(0, 0, [this.gridG, this.warpG, this.coinG, this.ghostG, this.hazG, this.playerG, this.fxG, ...texts]);
   }
 
   /** Fit an arena of w×h world units into the viewport (device px), below `topInset`. */
@@ -84,10 +84,14 @@ export class ArenaView {
   draw(s: RunState, dtMs: number, opts: { ghost: { x: number; y: number } | null; playerPop: number; showPlayer: boolean }): void {
     this.clock += dtMs / 1000;
     const dt = dtMs / 1000;
+    if (this.paletteVersion !== heatVersion()) {
+      this.paletteVersion = heatVersion();
+      this.drawGrid(this.arenaW, this.arenaH);
+      this.scene.cameras.main.setBackgroundColor(PALETTE.bg);
+    }
     this.frameDt = dt;
     this.trackSpeed(s, dt);
     this.drawWarpGrid(s, dt);
-    this.drawFrame(s);
 
     this.drawCoins(s);
     this.drawHazards(s);
@@ -157,7 +161,7 @@ export class ArenaView {
       const edge = Math.min(1, x / cell, (w - x) / cell, y / cell, (h - y) / cell);
       out.x = x + ox * edge; out.y = y + oy * edge;
     };
-    const color = s.frenzy > 0 ? 0x2c1820 : PALETTE.grid;
+    const color = PALETTE.grid;
     g.lineStyle(1.5, color, 1);
     const q = { x: 0, y: 0 };
     for (let x = cell; x < w; x += cell) {
@@ -181,25 +185,6 @@ export class ArenaView {
       if (p.life <= 0) { p.t.setVisible(false); continue; }
       const k = 1 - p.life / 0.8;
       p.t.setPosition(p.x, p.y - 60 * easeOut(k)).setAlpha(k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4);
-    }
-  }
-
-  /** True while a frenzy's final seconds should flash prey back to red. */
-  private warnBlink(s: RunState): boolean {
-    return s.frenzy > 0 && s.frenzy < TUNING.frenzy.warn && Math.floor(s.frenzy * 10) % 2 === 0;
-  }
-
-  /** Arena border: pulses red during a frenzy. */
-  private drawFrame(s: RunState): void {
-    const g = this.frameG;
-    g.clear();
-    if (s.frenzy <= 0) return;
-    const fade = Math.min(1, s.frenzy / 0.25, (TUNING.frenzy.duration - s.frenzy) / 0.12);
-    const pulse = 0.5 + 0.5 * Math.sin(this.clock * TAU * 4);
-    g.fillStyle(PALETTE.red, 0.05 * fade).fillRect(0, 0, s.arena.w, s.arena.h);
-    for (let i = 0; i < 3; i++) {
-      g.lineStyle(10 - i * 3, PALETTE.red, (0.18 + 0.3 * pulse) * fade * (1 - i * 0.25));
-      g.strokeRect(i * 7, i * 7, s.arena.w - i * 14, s.arena.h - i * 14);
     }
   }
 
@@ -227,16 +212,9 @@ export class ArenaView {
     g.clear();
     if (!show) return;
     const p = s.player;
-    const hunting = s.frenzy > 0 && !this.warnBlink(s);
-    const body = hunting ? PALETTE.red : PALETTE.player, core = hunting ? PALETTE.redHot : PALETTE.playerCore;
-    // Grace: a quick flicker says "you're safe, but not for long".
-    const a = s.grace > 0 && Math.floor(s.grace * 16) % 2 === 0 ? 0.35 : 1;
-    const sz = p.size * pop * (s.frenzy > 0 ? 1.12 + 0.05 * Math.sin(this.clock * TAU * 6) : 1);
+    const body = PALETTE.player, core = PALETTE.playerCore, a = 1;
+    const sz = p.size * pop;
     const x = p.x - sz / 2, y = p.y - sz / 2, rad = sz * 0.22;
-    if (s.frenzy > 0) {
-      const k = (this.clock * 2.5) % 1;
-      g.lineStyle(3 * (1 - k), body, 0.7 * (1 - k)).strokeRoundedRect(x - 6 - 22 * k, y - 6 - 22 * k, sz + 12 + 44 * k, sz + 12 + 44 * k, rad + 8 + 10 * k);
-    }
     g.fillStyle(body, 0.1 * a).fillRoundedRect(x - 10, y - 10, sz + 20, sz + 20, rad + 10);
     g.fillStyle(body, 0.22 * a).fillRoundedRect(x - 5, y - 5, sz + 10, sz + 10, rad + 5);
     g.fillStyle(body, a).fillRoundedRect(x, y, sz, sz, rad);
@@ -251,14 +229,8 @@ export class ArenaView {
   }
 
   private drawHazard(g: Phaser.GameObjects.Graphics, hz: Hazard, s: RunState): void {
-    const prey = s.frenzy > 0 && !this.warnBlink(s);
-    const RED = prey ? PALETTE.prey : PALETTE.red, HOT = prey ? PALETTE.preyHot : PALETTE.redHot;
-    if (s.frenzy > 0) {
-      // Prey trembles. Presentation-only offset; the sim position is untouched.
-      const j = 1.6;
-      hz = { ...hz, x: hz.x + Math.sin(this.clock * 61 + hz.id * 7) * j, y: hz.y + Math.cos(this.clock * 53 + hz.id * 3) * j };
-    }
-    const lethal = isLethal(hz) || s.frenzy > 0;
+    const RED = PALETTE.red, HOT = PALETTE.redHot;
+    const lethal = isLethal(hz);
     const telegraphing = hz.age < hz.telegraph;
     let alpha = 1;
     if (!telegraphing && hz.age > hz.life - hz.fadeSafe) alpha = Math.max(0, (hz.life - hz.age) / hz.fadeSafe) * 0.6;

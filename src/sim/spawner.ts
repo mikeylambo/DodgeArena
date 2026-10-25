@@ -23,7 +23,6 @@ export function runSpawner(s: RunState, rng: RunRng, dt: number): void {
   if (s.hazards.length >= lp.budget) { s.spawnTimer = 0.1; return; }
   const r = rng.hazards;
   const kind = r.weighted(lp.kinds, lp.weights);
-  if (kind === "laser" && s.frenzy > 0) { s.spawnTimer = 0.1; return; } // beams can't be prey
   const pHalf = s.player.size / 2;
   const safe = Math.max(safeSpawnDistance(), (TUNING.hazards[kind] as { minSpawnDist?: number }).minSpawnDist ?? 0);
   for (let attempt = 0; attempt < TUNING.fairness.spawnAttempts; attempt++) {

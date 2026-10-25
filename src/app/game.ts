@@ -10,7 +10,7 @@ import type { Orientation, RunConfig } from "../sim/types.js";
 import { ArenaView } from "../view/arena.js";
 import { FxSystem } from "../view/fx.js";
 import { Hud, type Mode } from "../view/hud.js";
-import { PALETTE } from "../view/palette.js";
+import { Heat, PALETTE } from "../view/palette.js";
 import { InputController } from "./input.js";
 import { SynthAudio } from "./audio.js";
 import { Persistence, boardFor } from "./persistence.js";
@@ -49,6 +49,7 @@ export class Game {
 
   readonly telemetry = new TelemetryRecorder({ context: { game: "dodge-arena-proto", build: "0.1.0" } });
   private readonly audio = new SynthAudio();
+  private readonly heat = new Heat();
   private readonly audioLifecycle = new AudioLifecycleCoordinator(this.audio);
   private readonly hud: Hud;
   private readonly input: InputController;
@@ -58,6 +59,7 @@ export class Game {
       onPlay: m => { this.audio.unlock(); this.setMode(m); this.startRun(performance.now()); },
       onPause: () => this.togglePause(),
       onMute: () => this.toggleMute(),
+      onColorblind: () => this.toggleColorblind(),
       onMode: m => { this.setMode(m); if (this.phase === "over") this.startRun(performance.now()); },
     });
     this.input = new InputController(inputSurface);
@@ -68,6 +70,8 @@ export class Game {
     if (DEV) (window as unknown as { __game: Game }).__game = this; // console/automation access
     this.audio.setMuted(persistence.data.muted);
     this.hud.setMuted(persistence.data.muted);
+    this.heat.setTheme(persistence.data.colorblind ? "colorblind" : "standard");
+    this.hud.setColorblind(!!persistence.data.colorblind);
   }
 
   /** Called from the Phaser scene's create(). */
@@ -152,6 +156,14 @@ export class Game {
     }
   }
 
+  private toggleColorblind(): void {
+    const on = !this.persistence.data.colorblind;
+    this.persistence.data.colorblind = on;
+    this.heat.setTheme(on ? "colorblind" : "standard");
+    this.hud.setColorblind(on);
+    void this.persistence.save();
+  }
+
   private toggleMute(): void {
     const m = !this.persistence.data.muted;
     this.persistence.data.muted = m;
@@ -190,6 +202,8 @@ export class Game {
 
     const frozen = this.phase === "dying" && this.dimTimer < TUNING.juice.hitstopMs;
     const fxDt = frozen || this.phase === "paused" ? 0 : dt / 1000;
+    // Color heat follows the run; on retry it cools back down over ~1.4 s.
+    this.heat.update(this.phase === "ready" || this.phase === "card" ? 1 : s.level, s.script.length > 0, dt / 1000);
     const shake = this.fx.update(fxDt);
     this.arena.setShake(shake.dx * this.arena.scale, shake.dy * this.arena.scale);
     this.playerPop += (1 - this.playerPop) * Math.min(1, dt / 70);
@@ -201,7 +215,6 @@ export class Game {
     });
     this.flashRect.setFillStyle(this.fx.flashTint, this.fx.flash);
     this.hud.stats(s.score, Math.max(s.score, this.persistence.best(this.board)), s.level);
-    this.hud.meterState(s.frenzy > 0 ? s.frenzy / TUNING.frenzy.duration : s.frenzyCharge / TUNING.frenzy.charge, s.frenzy > 0);
 
     if (this.phase === "playing" && this.lastRestartMs < 0) {
       this.lastRestartMs = performance.now() - this.restartTapAt;
@@ -237,33 +250,11 @@ export class Game {
           break;
         case "set_piece": {
           const title = { cage: "THE CAGE", wall: "THE WALL", swarm: "THE SWARM" }[ev.name];
-          this.arena.popup(s.arena.w / 2, s.arena.h * 0.3, title, "#ff6a7c", 1.6);
+          this.arena.popup(s.arena.w / 2, s.arena.h * 0.3, title, `#${PALETTE.redHot.toString(16).padStart(6, "0")}`, 1.6);
           this.audio.playSfx("level_up", { pitch: 0.5 });
           this.telemetry.record("set_piece", { name: ev.name, level: s.level });
           break;
         }
-        case "frenzy_start":
-          this.arena.ripple(s.player.x, s.player.y, 26, 0.9, 1100);
-          this.fx.frenzyStart(s.player.x, s.player.y, s.arena.w, s.arena.h);
-          this.arena.popup(s.player.x, s.player.y - 40, "FRENZY!", "#ff6a7c", 1.3);
-          this.audio.playSfx("frenzy_start");
-          this.playerPop = 1.5;
-          this.telemetry.record("frenzy_start", { t: +s.time.toFixed(2), hazards: s.hazards.length });
-          break;
-        case "eat":
-          this.fx.eat(ev.x, ev.y, ev.chain);
-          this.arena.ripple(ev.x, ev.y, 10, 0.45, 800);
-          this.arena.popup(ev.x, ev.y, `+${ev.points}`, "#c8fdff", 0.8 + Math.min(ev.chain, 5) * 0.12);
-          this.audio.playSfx("eat", { pitch: Math.pow(2, Math.min(ev.chain - 1, 12) / 12) });
-          this.playerPop = 1.35;
-          this.hud.punchScore();
-          this.telemetry.record("eat", { kind: ev.kind, chain: ev.chain, points: ev.points, t: +s.time.toFixed(2) });
-          break;
-        case "frenzy_end":
-          this.fx.frenzyEnd(s.player.x, s.player.y);
-          this.audio.playSfx("frenzy_end");
-          this.telemetry.record("frenzy_end", { chain: s.chain, t: +s.time.toFixed(2) });
-          break;
         case "death":
           this.onDeath(ev.kind);
           break;
@@ -284,7 +275,7 @@ export class Game {
     void this.persistRun();
   }
 
-  private lastResult = { score: 0, best: 0, level: 1, newBest: false, eaten: 0 };
+  private lastResult = { score: 0, best: 0, level: 1, newBest: false };
 
   private async persistRun(): Promise<void> {
     const s = this.run.state;
@@ -294,7 +285,7 @@ export class Game {
     p.data.runs++;
     p.data.firstRunDone = true;
     if (newBest) p.data.best[this.board] = s.score;
-    this.lastResult = { score: s.score, best: Math.max(prevBest, s.score), level: s.level, newBest, eaten: s.eaten };
+    this.lastResult = { score: s.score, best: Math.max(prevBest, s.score), level: s.level, newBest };
     const replay = this.recorder?.finish(s.tick);
     this.ghostRec?.finish({ x: s.player.x, y: s.player.y, z: 0 });
     const ghost: GhostRecording | undefined = this.ghostRec?.serialize({ seed: s.seed, levelId: this.board, score: s.score });

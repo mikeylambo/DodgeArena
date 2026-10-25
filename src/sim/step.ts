@@ -26,7 +26,7 @@ export function createRun(config: RunConfig): Run {
     breather: 0.6, // brief settle-in before the first spawn
     spawnTimer: 0,
     score: 0, coinsCollected: 0, combo: 0, lastCoinTime: -Infinity, nearMisses: 0,
-    script: [], frenzyCharge: 0, frenzy: 0, grace: 0, chain: 0, eaten: 0,
+    script: [],
     player: { x: dims.width / 2, y: dims.height / 2, size, hit: (size * TUNING.player.hitboxScale) / 2, pendingX: 0, pendingY: 0 },
     coins: [], coinRespawns: [],
     hazards: [], nextId: 1,
@@ -44,7 +44,6 @@ export function step(run: Run, input: StepInput, dt: number = SIM_DT): RunState 
   if (!s.alive) return s;
 
   movePlayer(s, input, dt);
-  tickFrenzy(s, dt);
 
   // Hazards
   for (let i = s.hazards.length - 1; i >= 0; i--) {
@@ -147,62 +146,15 @@ function updateCoins(run: Run, _dt: number): void {
     s.coinsThisLevel++;
     s.score += C.value;
     s.events.push({ type: "coin", x: c.x, y: c.y, combo: s.combo, score: s.score });
-    addCharge(s, 1);
   }
-}
-
-/** Coins and grazes both feed the frenzy meter. */
-function addCharge(s: RunState, n: number): void {
-  if (s.frenzy > 0) return;
-  s.frenzyCharge += n;
-  if (s.frenzyCharge >= TUNING.frenzy.charge) startFrenzy(s);
-}
-
-function startFrenzy(s: RunState): void {
-  s.frenzyCharge = 0;
-  s.frenzy = TUNING.frenzy.duration;
-  s.chain = 0;
-  // Beams can't be eaten, so they're cleared: during a frenzy, everything on screen is prey.
-  s.hazards = s.hazards.filter(h => h.kind !== "laser");
-  s.events.push({ type: "frenzy_start" });
-}
-
-function tickFrenzy(s: RunState, dt: number): void {
-  if (s.grace > 0) s.grace = Math.max(0, s.grace - dt);
-  if (s.frenzy <= 0) return;
-  s.frenzy -= dt;
-  if (s.frenzy > 0) return;
-  s.frenzy = 0;
-  s.grace = TUNING.frenzy.grace;
-  s.events.push({ type: "frenzy_end" });
-}
-
-/** Points for the n-th eat (1-based) of a frenzy: doubles per eat, capped. */
-export function eatPoints(chain: number): number {
-  const F = TUNING.frenzy;
-  return Math.min(F.eatMax, F.eatBase * Math.pow(2, chain - 1));
 }
 
 function checkHazards(s: RunState): void {
   const p = s.player;
-  if (s.frenzy > 0) {
-    // Generous like coins: the visual box eats, not the hitbox.
-    for (let i = s.hazards.length - 1; i >= 0; i--) {
-      const hz = s.hazards[i]!;
-      if (hz.age >= hz.life - hz.fadeSafe || gapToHazard(p.x, p.y, p.size / 2, hz) >= 0) continue;
-      s.hazards.splice(i, 1);
-      const points = eatPoints(++s.chain);
-      s.eaten++;
-      s.score += points;
-      s.events.push({ type: "eat", hazardId: hz.id, kind: hz.kind, x: hz.x, y: hz.y, chain: s.chain, points });
-    }
-    return;
-  }
   const nearDist = p.size * TUNING.juice.nearMissPlayerWidths;
   for (const hz of s.hazards) {
     if (!isLethal(hz)) continue;
     const g = gapToHazard(p.x, p.y, p.hit, hz);
-    if (g < 0 && s.grace > 0) continue;
     if (g < 0) {
       s.alive = false;
       s.deathKind = hz.kind;
@@ -212,7 +164,6 @@ function checkHazards(s: RunState): void {
     if (g < nearDist && s.time - hz.lastNearMiss > TUNING.juice.nearMissCooldown) {
       hz.lastNearMiss = s.time;
       s.nearMisses++;
-      addCharge(s, TUNING.frenzy.grazeCharge);
       s.events.push({ type: "near_miss", hazardId: hz.id, kind: hz.kind, x: p.x, y: p.y });
     }
   }
@@ -222,7 +173,7 @@ function checkHazards(s: RunState): void {
 export function hashRun(run: Run): string {
   const s = run.state;
   const json = JSON.stringify({
-    tick: s.tick, level: s.level, score: s.score, sc: s.script.length, fz: [s.frenzyCharge, s.frenzy, s.grace, s.chain], alive: s.alive, death: s.deathKind,
+    tick: s.tick, level: s.level, score: s.score, sc: s.script.length, alive: s.alive, death: s.deathKind,
     p: [s.player.x, s.player.y, s.player.pendingX, s.player.pendingY],
     hz: s.hazards.map(h => [h.id, h.kind, h.x, h.y, h.angle, h.age]),
     coins: s.coins.map(c => [c.id, c.x, c.y]),

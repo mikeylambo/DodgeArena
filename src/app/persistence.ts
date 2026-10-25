@@ -11,6 +11,8 @@ export interface SaveData {
   runs: number;
   firstRunDone: boolean;
   muted: boolean;
+  /** Colorblind-safe palette. */
+  colorblind?: boolean;
   /** Best score per board ("endless", "daily:YYYY-MM-DD"). */
   best: Record<string, number>;
   playerId: string;

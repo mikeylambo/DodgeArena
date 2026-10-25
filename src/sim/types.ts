@@ -52,9 +52,6 @@ export type SimEvent =
   | { type: "near_miss"; hazardId: number; kind: HazardKind; x: number; y: number }
   | { type: "level_up"; level: number }
   | { type: "set_piece"; name: "cage" | "wall" | "swarm" }
-  | { type: "frenzy_start" }
-  | { type: "frenzy_end" }
-  | { type: "eat"; hazardId: number; kind: HazardKind; x: number; y: number; chain: number; points: number }
   | { type: "spawn"; hazardId: number; kind: HazardKind }
   | { type: "death"; kind: HazardKind; hazardId: number; x: number; y: number };
 
@@ -85,15 +82,6 @@ export interface RunState {
   nearMisses: number;
   /** Pending set-piece beats. */
   script: { at: number; op: "cage" | "wall" | "swarm"; flip: boolean }[];
-  /** Charge toward the next frenzy (coins and grazes; 0..frenzy.charge). */
-  frenzyCharge: number;
-  /** Seconds of frenzy left; > 0 means hazards are edible. */
-  frenzy: number;
-  /** Seconds of post-frenzy immunity left. */
-  grace: number;
-  /** Hazards eaten in the current frenzy. */
-  chain: number;
-  eaten: number;
   player: Player;
   coins: Coin[];
   /** Times (sim seconds) at which a pending coin should try to respawn. */
