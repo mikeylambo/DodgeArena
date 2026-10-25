@@ -43,13 +43,13 @@
     "eatMax": 400,
     "grazeCharge": 1
   },
-  "lasso": {
-    "$comment": "Your path leaves a light trail (capped by length and age). When the trail crosses itself, the loop it closes destroys every non-laser hazard inside. Each catch is worth pointsPer x the number caught, so bigger loops pay more than linearly. minArea ignores jitter loops.",
-    "sampleDist": 6,
-    "maxLength": 900,
-    "maxAge": 1.1,
-    "minArea": 2500,
-    "pointsPer": 30
+  "setPieces": {
+    "$comment": "Every `every` levels an authored wave replaces random spawns, cycling cage -> wall -> swarm. beats = seconds after level-up at which each pulse fires; tail = extra quiet seconds after the last beat.",
+    "every": 5,
+    "tail": 1.5,
+    "cage": { "beats": [0.4, 2.0, 3.6], "cell": 120, "telegraph": 0.9 },
+    "wall": { "beats": [0.4, 4.2], "speed": 230, "gapPlayerWidths": 4, "telegraph": 1.0 },
+    "swarm": { "beats": [0.4, 3.0], "count": 3, "speedMul": 1.1, "life": 5 }
   },
   "juice": {
     "nearMissPlayerWidths": 0.3,

@@ -235,15 +235,13 @@ export class Game {
           this.audio.playSfx("level_up");
           this.telemetry.record("level_up", { level: ev.level, t: +s.time.toFixed(2) });
           break;
-        case "lasso":
-          this.fx.lasso(ev.caught, ev.count);
-          this.arena.lassoFlash(ev.poly);
-          this.arena.ripple(ev.cx, ev.cy, -14 - 3 * Math.min(ev.count, 5), 0.5, -700);
-          this.arena.popup(ev.cx, ev.cy, ev.count > 1 ? `LASSO x${ev.count}  +${ev.points}` : `+${ev.points}`, "#ffffff", 0.9 + Math.min(ev.count, 5) * 0.12);
-          this.audio.playSfx("lasso", { pitch: Math.pow(2, Math.min(ev.count - 1, 7) / 12) });
-          this.hud.punchScore();
-          this.telemetry.record("lasso", { count: ev.count, points: ev.points, t: +s.time.toFixed(2) });
+        case "set_piece": {
+          const title = { cage: "THE CAGE", wall: "THE WALL", swarm: "THE SWARM" }[ev.name];
+          this.arena.popup(s.arena.w / 2, s.arena.h * 0.3, title, "#ff6a7c", 1.6);
+          this.audio.playSfx("level_up", { pitch: 0.5 });
+          this.telemetry.record("set_piece", { name: ev.name, level: s.level });
           break;
+        }
         case "frenzy_start":
           this.arena.ripple(s.player.x, s.player.y, 26, 0.9, 1100);
           this.fx.frenzyStart(s.player.x, s.player.y, s.arena.w, s.arena.h);

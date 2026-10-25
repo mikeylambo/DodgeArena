@@ -6,9 +6,15 @@ Living checklist for Dodge Arena.
 
 - [x] **Frenzy / Turn the Tables**: every 15 coins (HUD meter under BEST), the arena inverts for 3.0 s. Hazards turn cyan and tremble, the player turns red. Touching a hazard eats it for chained points: 25 → 50 → 100 → 200 → 400 (capped). Lasers are cleared and can't spawn mid-frenzy. The last 0.9 s blink as a warning, and 0.6 s of flicker-immunity follows. Tuning lives in `tuning.json → frenzy`.
 - [x] Bot hunts during frenzies. Median survival is now ~80 s (still inside the 45–90 s band), with 100% level-1 survival. `tests/frenzy.test.mjs` covers the trigger, scoring, laser rule, and no deaths during frenzy or grace.
-- [x] **Light-trail lasso**: the cube leaves a trail capped at 900 units and 1.1 s. When the trail crosses itself, every non-laser hazard inside the closed loop is destroyed for 30 × n² points. Loops smaller than 2500 units² are ignored. Tuning lives in `tuning.json → lasso`, tests in `tests/lasso.test.mjs`.
+- [x] **Hazard silhouettes** (view-only; outlines still match hitboxes):
+  - static: riveted mine bar
+  - slider: printed chevrons and a speed streak
+  - bouncer: squash on wall impact
+  - rotor: motion-blur blades and a hub
+  - seeker: comet tail and tracking eye
+- [x] **Set pieces**: every 5 levels an authored wave replaces random spawns, cycling THE CAGE (beams in a # around you, 3 pulses), THE WALL (a slider wall with a gap, 2 passes from opposite sides), and THE SWARM (seekers from the far corners). Each one is built around the player's position so a safe answer exists. Code is in `src/sim/setpieces.ts`, tuning in `tuning.json → setPieces`, tests in `tests/setpieces.test.mjs`.
 - [x] **Grazing charges Frenzy**: each near miss adds `frenzy.grazeCharge` (1) toward the 15-point meter, the same as a coin.
-- [x] **Grid warp**: the grid acts as a membrane. The cube bulges it, more at speed, and coins, eats, lassos (an inward implosion), level-ups, frenzy, and death send ripples through it. View-only (`ArenaView.drawWarpGrid`).
+- [x] **Grid warp**: the grid acts as a membrane. The cube bulges it, more at speed, and coins, eats, level-ups, frenzy, and death send ripples through it. View-only (`ArenaView.drawWarpGrid`).
 - [x] Dev: with `?dev=1`, `window.__game` is exposed for console tuning, e.g. `__game.run.state.frenzyCharge = 14`.
 
 - [x] **Shell Vendoring**: Vendored at `vendor/web-shell` (mikeylambo/Web-Game-Shell-v1.02 `main` @ 6f08d17, v1.1.0), unmodified.

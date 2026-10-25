@@ -12,7 +12,12 @@ export interface Tuning {
   coins: { radius: number; onScreen: number; value: number; respawnDelay: number; minDistFromPlayer: number; hazardClearance: number; edgeMargin: number; comboWindow: number };
   fairness: { minTelegraph: number; safeSpawnPlayerWidths: number; breatherAfterLevelUp: number; spawnAttempts: number; fadeOutSafe: number };
   frenzy: { charge: number; duration: number; warn: number; grace: number; eatBase: number; eatMax: number; grazeCharge: number };
-  lasso: { sampleDist: number; maxLength: number; maxAge: number; minArea: number; pointsPer: number };
+  setPieces: {
+    every: number; tail: number;
+    cage: { beats: number[]; cell: number; telegraph: number };
+    wall: { beats: number[]; speed: number; gapPlayerWidths: number; telegraph: number };
+    swarm: { beats: number[]; count: number; speedMul: number; life: number };
+  };
   juice: { nearMissPlayerWidths: number; nearMissCooldown: number; hitstopMs: number };
   levels: {
     secondsPerLevel: number;
@@ -25,7 +30,7 @@ export interface Tuning {
     slider: { length: number; thickness: number; telegraph: number; speed: Range; edgeInset: number };
     bouncer: { radius: number; telegraph: number; speed: Range; life: Range };
     rotor: { length: number; thickness: number; telegraph: number; angularSpeed: Range; life: Range };
-    seeker: { radius: number; telegraph: number; speed: number; turnRate: number; life: Range };
+    seeker: { radius: number; telegraph: number; speed: number; turnRate: number; life: Range; minSpawnDist: number };
     laser: { thickness: number; telegraph: number; beam: number };
   };
 }

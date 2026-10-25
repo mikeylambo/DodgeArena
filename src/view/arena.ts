@@ -20,10 +20,8 @@ export class ArenaView {
   private readonly playerG: Phaser.GameObjects.Graphics;
   private readonly frameG: Phaser.GameObjects.Graphics;
   private readonly warpG: Phaser.GameObjects.Graphics;
-  private readonly trailG: Phaser.GameObjects.Graphics;
   /** Grid ripples (world units). amp > 0 pushes out, < 0 pulls in. */
   private readonly ripples: { x: number; y: number; t: number; life: number; amp: number; speed: number }[] = [];
-  private loopFlash: { poly: { x: number; y: number }[]; life: number } | null = null;
   private lastPX = NaN;
   private lastPY = NaN;
   private speed = 0;
@@ -35,6 +33,8 @@ export class ArenaView {
   ox = 0;
   oy = 0;
   private gridKey = "";
+  /** Bouncer impact squash, keyed by hazard id (view-only). */
+  private readonly squash = new Map<number, { svx: number; svy: number; axis: "x" | "y"; t: number }>();
   private clock = 0;
 
   constructor(scene: Phaser.Scene) {
@@ -46,7 +46,7 @@ export class ArenaView {
     this.fxG = scene.add.graphics();
     this.frameG = scene.add.graphics();
     this.warpG = scene.add.graphics();
-    this.trailG = scene.add.graphics();
+
     const texts = [];
     for (let i = 0; i < 8; i++) {
       const t = scene.add.text(0, 0, "", { fontFamily: "ui-sans-serif, system-ui, sans-serif", fontSize: "34px", fontStyle: "900", color: "#ffffff", stroke: "#0d0e14", strokeThickness: 6 })
@@ -54,7 +54,7 @@ export class ArenaView {
       this.popups.push({ t, life: 0, x: 0, y: 0 });
       texts.push(t);
     }
-    this.root = scene.add.container(0, 0, [this.gridG, this.warpG, this.frameG, this.coinG, this.trailG, this.ghostG, this.hazG, this.playerG, this.fxG, ...texts]);
+    this.root = scene.add.container(0, 0, [this.gridG, this.warpG, this.frameG, this.coinG, this.ghostG, this.hazG, this.playerG, this.fxG, ...texts]);
   }
 
   /** Fit an arena of w×h world units into the viewport (device px), below `topInset`. */
@@ -79,13 +79,16 @@ export class ArenaView {
     g.lineStyle(3, PALETTE.border, 1).strokeRect(0, 0, w, h);
   }
 
+  private frameDt = 0;
+
   draw(s: RunState, dtMs: number, opts: { ghost: { x: number; y: number } | null; playerPop: number; showPlayer: boolean }): void {
     this.clock += dtMs / 1000;
     const dt = dtMs / 1000;
+    this.frameDt = dt;
     this.trackSpeed(s, dt);
     this.drawWarpGrid(s, dt);
     this.drawFrame(s);
-    this.drawTrail(s, dt);
+
     this.drawCoins(s);
     this.drawHazards(s);
     this.drawGhost(opts.ghost, s.player.size);
@@ -105,8 +108,6 @@ export class ArenaView {
     if (this.ripples.length >= 6) this.ripples.shift();
     this.ripples.push({ x, y, t: 0, life, amp, speed });
   }
-
-  lassoFlash(poly: { x: number; y: number }[]): void { this.loopFlash = { poly, life: 0.4 }; }
 
   private trackSpeed(s: RunState, dt: number): void {
     const p = s.player;
@@ -168,31 +169,6 @@ export class ArenaView {
       g.beginPath();
       for (let x = 0; x <= w; x += step) { warp(x, y, q); if (x === 0) g.moveTo(q.x, q.y); else g.lineTo(q.x, q.y); }
       g.strokePath();
-    }
-  }
-
-  /** Light trail: fades with age; this is the lasso rope. */
-  private drawTrail(s: RunState, dt: number): void {
-    const g = this.trailG, tr = s.trail, maxAge = TUNING.lasso.maxAge;
-    g.clear();
-    if (this.loopFlash) {
-      const f = this.loopFlash;
-      f.life -= dt;
-      if (f.life <= 0) this.loopFlash = null;
-      else {
-        const k = f.life / 0.4;
-        g.fillStyle(PALETTE.playerCore, 0.35 * k).fillPoints(f.poly, true);
-        g.lineStyle(4 * k + 1, PALETTE.white, k).strokePoints(f.poly, true);
-      }
-    }
-    if (!s.alive || tr.length < 2) return;
-    const col = s.frenzy > 0 ? PALETTE.red : PALETTE.player;
-    for (let i = 1; i < tr.length; i++) {
-      const a = tr[i - 1]!, b = tr[i]!;
-      const k = Math.max(0, 1 - (s.time - b.t) / maxAge);
-      if (k <= 0) continue;
-      g.lineStyle(10 * k, col, 0.12 * k).lineBetween(a.x, a.y, b.x, b.y);
-      g.lineStyle(3.5 * k + 0.5, col, 0.85 * k).lineBetween(a.x, a.y, b.x, b.y);
     }
   }
 
@@ -271,6 +247,7 @@ export class ArenaView {
     const g = this.hazG;
     g.clear();
     for (const hz of s.hazards) this.drawHazard(g, hz, s);
+    if (this.squash.size > 64) for (const id of this.squash.keys()) if (!s.hazards.some(h => h.id === id)) this.squash.delete(id);
   }
 
   private drawHazard(g: Phaser.GameObjects.Graphics, hz: Hazard, s: RunState): void {
@@ -305,6 +282,29 @@ export class ArenaView {
 
     if (hz.shape.type === "circle") {
       const r = hz.shape.r * grow;
+      if (hz.kind === "bouncer" && !telegraphing) {
+        // Impact squash: flatten along the wall normal for a beat. Reads "it bounces" instantly.
+        const q = this.squash.get(hz.id) ?? { svx: Math.sign(hz.vx), svy: Math.sign(hz.vy), axis: "x" as const, t: 0 };
+        if (Math.sign(hz.vx) !== q.svx) { q.axis = "x"; q.t = 0.16; }
+        else if (Math.sign(hz.vy) !== q.svy) { q.axis = "y"; q.t = 0.16; }
+        q.svx = Math.sign(hz.vx); q.svy = Math.sign(hz.vy);
+        q.t = Math.max(0, q.t - this.frameDt);
+        this.squash.set(hz.id, q);
+        const k = Math.sin((q.t / 0.16) * Math.PI) * 0.22;
+        const ex = r * 2 * (q.axis === "x" ? 1 - k : 1 + k * 0.6), ey = r * 2 * (q.axis === "y" ? 1 - k : 1 + k * 0.6);
+        g.fillStyle(RED, 0.12 * alpha).fillEllipse(hz.x, hz.y, ex + 18, ey + 18);
+        g.fillStyle(RED, 0.25 * alpha).fillEllipse(hz.x, hz.y, ex + 8, ey + 8);
+        g.fillStyle(RED, fillA).fillEllipse(hz.x, hz.y, ex, ey);
+        g.fillStyle(HOT, 0.6 * alpha).fillCircle(hz.x - r * 0.3, hz.y - r * 0.3, r * 0.28);
+        return;
+      }
+      if (hz.kind === "seeker" && !telegraphing) {
+        // Comet tail behind the heading: shows it's hunting and where it's turning.
+        for (let i = 3; i >= 1; i--) {
+          const d = r * 0.9 * i;
+          g.fillStyle(RED, 0.16 * alpha * (1 - i / 4)).fillCircle(hz.x - Math.cos(hz.angle) * d, hz.y - Math.sin(hz.angle) * d, r * (1 - i * 0.2));
+        }
+      }
       if (lethal || !telegraphing) {
         g.fillStyle(RED, 0.12 * alpha).fillCircle(hz.x, hz.y, r + 9);
         g.fillStyle(RED, 0.25 * alpha).fillCircle(hz.x, hz.y, r + 4);
@@ -332,7 +332,36 @@ export class ArenaView {
     }
     g.fillStyle(RED, fillA); this.fillRot(g, hz.x, hz.y, hw, hh, ang);
     if (strokeA > 0) { g.lineStyle(2.5, RED, strokeA); this.strokeRot(g, hz.x, hz.y, hw, hh, ang); }
-    if (hz.kind === "rotor") g.fillStyle(HOT, alpha).fillCircle(hz.x, hz.y, hh * 0.7);
+    if (hz.kind === "rotor") {
+      // Motion blur: ghost blades trailing the spin direction.
+      if (!telegraphing) for (let i = 1; i <= 3; i++) {
+        g.fillStyle(RED, 0.13 * alpha * (1 - i / 4)); this.fillRot(g, hz.x, hz.y, hw, hh, ang - hz.angularVel * 0.035 * i);
+      }
+      g.fillStyle(HOT, alpha).fillCircle(hz.x, hz.y, hh * 0.7);
+      g.fillStyle(PALETTE.bg, 0.8 * alpha).fillCircle(hz.x, hz.y, hh * 0.28);
+    }
+    if (hz.kind === "static") {
+      // Segmented "mine bar": dark rivets along the long axis say "inert, but don't touch".
+      const horiz = hw > hh, n = 3, len = horiz ? hw : hh, rv = Math.min(hw, hh) * 0.32;
+      g.fillStyle(PALETTE.bg, 0.55 * (telegraphing ? fillA * 2 : alpha));
+      for (let i = 0; i < n; i++) {
+        const o = (i - (n - 1) / 2) * (len * 2 / n);
+        g.fillRect(hz.x + (horiz ? o : 0) - rv, hz.y + (horiz ? 0 : o) - rv, rv * 2, rv * 2);
+      }
+    }
+    if (hz.kind === "slider" && !telegraphing) {
+      // Printed chevrons + a speed streak: direction is readable mid-motion, not just at telegraph.
+      const len = Math.hypot(hz.vx, hz.vy) || 1, ux = hz.vx / len, uy = hz.vy / len, vx = -uy, vy = ux;
+      const across = Math.abs(ux) * hw + Math.abs(uy) * hh, side = Math.abs(vx) * hw + Math.abs(vy) * hh;
+      g.fillStyle(RED, 0.1 * alpha);
+      this.fillRot(g, hz.x - ux * (across + 22), hz.y - uy * (across + 22), Math.abs(ux) * 22 + Math.abs(vx) * side * 0.7, Math.abs(uy) * 22 + Math.abs(vy) * side * 0.7, 0);
+      const c = Math.min(side * 0.55, 10);
+      g.lineStyle(3, PALETTE.bg, 0.6 * alpha);
+      for (const off of side > 20 ? [-side * 0.45, side * 0.45] : [0]) {
+        const cx = hz.x + vx * off + ux * c * 0.4, cy = hz.y + vy * off + uy * c * 0.4;
+        g.beginPath(); g.moveTo(cx - ux * c + vx * c, cy - uy * c + vy * c); g.lineTo(cx, cy); g.lineTo(cx - ux * c - vx * c, cy - uy * c - vy * c); g.strokePath();
+      }
+    }
 
     if (hz.kind === "slider" && telegraphing) {
       // Chevrons point where it will travel.

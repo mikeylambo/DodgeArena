@@ -51,7 +51,7 @@ export type SimEvent =
   | { type: "coin"; x: number; y: number; combo: number; score: number }
   | { type: "near_miss"; hazardId: number; kind: HazardKind; x: number; y: number }
   | { type: "level_up"; level: number }
-  | { type: "lasso"; count: number; points: number; cx: number; cy: number; poly: Vec2[]; caught: { x: number; y: number; kind: HazardKind }[] }
+  | { type: "set_piece"; name: "cage" | "wall" | "swarm" }
   | { type: "frenzy_start" }
   | { type: "frenzy_end" }
   | { type: "eat"; hazardId: number; kind: HazardKind; x: number; y: number; chain: number; points: number }
@@ -83,9 +83,8 @@ export interface RunState {
   combo: number;
   lastCoinTime: number;
   nearMisses: number;
-  /** Light trail, oldest first; `t` is sim time of the sample. */
-  trail: { x: number; y: number; t: number }[];
-  lassos: number;
+  /** Pending set-piece beats. */
+  script: { at: number; op: "cage" | "wall" | "swarm"; flip: boolean }[];
   /** Charge toward the next frenzy (coins and grazes; 0..frenzy.charge). */
   frenzyCharge: number;
   /** Seconds of frenzy left; > 0 means hazards are edible. */
